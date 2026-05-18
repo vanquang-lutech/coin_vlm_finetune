@@ -1,0 +1,10 @@
+*.jpg
+data/raw/**
+*.pt
+*.pth
+venv/
+/__pycache__/
+.venv/
+.env
+data/processed/augmented/**
+*/*/labels.json

@@ -1,0 +1,16 @@
+
+data:
+  annotations_path: "data/annotations/coin_labels.json"
+  image_dir: "data/processed"
+  output_dir: "data/splits"
+  train_ratio: 0.8
+  val_ratio: 0.1
+  test_ratio: 0.1
+  stratify_by: ["year", "mint_mark"]
+  seed: 42
+  min_samples_per_class: 3
+  instruction: >
+    Analyze the coin image and extract year and mint mark.
+    Return JSON: {"year": "YYYY", "mint_mark": "X"}
+  image_sides: ["obverse"]
+  enhancer_config_path: "configs/enhancer_config.json"
