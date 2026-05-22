@@ -1,16 +1,20 @@
+hf_dataset_name: "coin_dataset"
+cache_dir: null
+annotations_path: "data/annotations/labels.json"
+image_dir: "data/processed"
+output_dir: "data/splits"
+train_ratio: 0.8
+val_ratio: 0.1
+test_ratio: 0.1
+stratify_by: ["year", "mint_mark"]
+seed: 42
+min_samples_per_class: 3
+enhancer_config_path: null
 
-data:
-  annotations_path: "data/annotations/coin_labels.json"
-  image_dir: "data/processed"
-  output_dir: "data/splits"
-  train_ratio: 0.8
-  val_ratio: 0.1
-  test_ratio: 0.1
-  stratify_by: ["year", "mint_mark"]
-  seed: 42
-  min_samples_per_class: 3
-  instruction: >
-    Analyze the coin image and extract year and mint mark.
-    Return JSON: {"year": "YYYY", "mint_mark": "X"}
-  image_sides: ["obverse"]
-  enhancer_config_path: "configs/enhancer_config.json"
+prompt:
+  system: "You are an expert coin analyst."
+  user: "Analyze the coin image and extract year and mint mark. Return JSON: {\"year\": \"YYYY\", \"mint_mark\": \"X\"}"
+  response_format: "json"
+  response_template:
+    year: "{year}"
+    mint_mark: "{mint_mark}"

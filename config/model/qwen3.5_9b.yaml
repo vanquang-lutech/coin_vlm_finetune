@@ -1,0 +1,13 @@
+backend: "hf_peft"
+name: "Qwen/Qwen3.5-VL-9B"
+model_name: "Qwen/Qwen3.5-VL-9B"
+trust_remote_code: true
+torch_dtype: "bfloat16"
+device_map: "auto"
+attn_implementation: "flash_attention_2"
+gradient_checkpointing: true
+max_seq_length: 2048
+ 
+processor:
+  min_pixels: 256
+  max_pixels: 1024

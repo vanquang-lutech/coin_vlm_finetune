@@ -1,16 +1,13 @@
-inference:
-  # --- Generation ---
+generation:
   max_new_tokens: 128
   temperature: 0.1
   top_p: 1.0
   repetition_penalty: 1.0
-  do_sample: false             # false = greedy, true = sampling
+  do_sample: false
 
-  # --- Preprocessing ---
+preprocessing:
   max_image_size: 768
 
-  # --- Prompt ---
-  instruction: >
-    You are an expert US coin analyst.
-    Analyze the coin image and extract year and mint mark.
-    Return JSON: {"year": "YYYY", "mint_mark": "X"}
+prompt:
+  system: "You are an expert US coin analyst."
+  user: "Analyze the coin image and extract year and mint mark. Return JSON: {\"year\": \"YYYY\", \"mint_mark\": \"X\"}"
