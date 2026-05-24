@@ -1,10 +1,7 @@
 model:
   backend: "unsloth"
 
-  # Override model name cho Unsloth — khac voi HF repo name
-  # Unsloth repo co model pre-quantize san, load nhanh hon
-  # Neu khong set thi fallback ve model.name trong model config
-  name: "unsloth/Qwen2.5-VL-7B-Instruct-bnb-4bit"
+  # Model name is chosen in model config; set model.unsloth_name to an Unsloth repo.
   load_in_4bit: true
 
   lora:

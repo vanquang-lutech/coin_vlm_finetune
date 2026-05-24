@@ -21,13 +21,13 @@ pip install -r requirements.txt
 
 ### Config layout
 
-- `config/data/coin_dataset.yaml`: HF dataset name and prompt template
-- `config/model/*.yaml`: base model identity and processor defaults
+- `config/data/coin_dataset.yaml`: HF dataset name and split settings
+- `config/model/*.yaml`: base model identity, processor defaults, and prompt template
 - `config/training/training.yaml`: training hyperparameters
-- `config/method/*.yaml`: backend overrides (hf_peft, unsloth, full_finetune)
-- `config/inference/inference.yaml`: generation settings and inference prompt
+- `config/backend/*.yaml`: backend overrides (hf_peft, unsloth, full_finetune)
+- `config/inference/inference.yaml`: generation settings (optional prompt override)
 
-Method configs are merged on top of model/training configs when you pass
+Backend configs are merged on top of model/training configs when you pass
 `--method_config`.
 
 ### Train
@@ -37,7 +37,7 @@ python scripts/train.py \
 	--data_config config/data/coin_dataset.yaml \
 	--model_config config/model/qwen3.5_9b.yaml \
 	--training_config config/training/training.yaml \
-	--method_config config/method/hf_peft_lora.yaml
+	--method_config config/backend/hf_peft_lora.yaml
 ```
 
 Override any config value:
@@ -54,7 +54,7 @@ python scripts/evaluate.py \
 	--data_config config/data/coin_dataset.yaml \
 	--model_config config/model/qwen3.5_9b.yaml \
 	--training_config config/training/training.yaml \
-	--method_config config/method/hf_peft_lora.yaml \
+	--method_config config/backend/hf_peft_lora.yaml \
 	--checkpoint_path outputs/checkpoints/checkpoint-1000
 ```
 
@@ -65,7 +65,7 @@ python scripts/inference.py \
 	--data_config config/data/coin_dataset.yaml \
 	--model_config config/model/qwen3.5_9b.yaml \
 	--training_config config/training/training.yaml \
-	--method_config config/method/hf_peft_lora.yaml \
+	--method_config config/backend/hf_peft_lora.yaml \
 	--checkpoint_path outputs/checkpoints/checkpoint-1000 \
 	--image path/to/coin.jpg
 ```
@@ -80,7 +80,7 @@ python scripts/export.py \
 	--data_config config/data/coin_dataset.yaml \
 	--model_config config/model/qwen3.5_9b.yaml \
 	--training_config config/training/training.yaml \
-	--method_config config/method/hf_peft_lora.yaml \
+	--method_config config/backend/hf_peft_lora.yaml \
 	--adapter_path outputs/checkpoints/checkpoint-1000 \
 	--output_dir outputs/merged_models/coin-vlm
 ```
@@ -93,7 +93,7 @@ python scripts/export.py \
 	--data_config config/data/coin_dataset.yaml \
 	--model_config config/model/qwen3.5_9b.yaml \
 	--training_config config/training/training.yaml \
-	--method_config config/method/hf_peft_lora.yaml \
+	--method_config config/backend/hf_peft_lora.yaml \
 	--model_path outputs/merged_models/coin-vlm \
 	--output_dir outputs/merged_models \
 	--quantization Q4_K_M
@@ -101,6 +101,7 @@ python scripts/export.py \
 
 ### Notes
 
-- For Unsloth, set `model.name` in the method config to an Unsloth repo.
+- For Unsloth, set `model.unsloth_name` in the model config to an Unsloth repo.
 - QLoRA requires bitsandbytes and a CUDA GPU.
-- Inference prompt and generation settings come from `config/inference/inference.yaml`.
+- Generation settings come from `config/inference/inference.yaml`; set `prompt` there to override inference/eval prompts (training still uses model prompt).
+- Set `prompt.assistant_start_token` in the model config if the assistant token is not inferred correctly.

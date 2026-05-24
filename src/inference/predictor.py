@@ -131,9 +131,7 @@ class CoinPredictor:
         return Image.open(path).convert("RGB")
     
     def _build_messages(self):
-        prompt = self.config.get("prompt", None)
-        if prompt is None:
-            prompt = self.config.data.prompt
+        prompt = self._resolve_prompt()
         return [
             {
                 "role": "system",
@@ -147,4 +145,21 @@ class CoinPredictor:
                 ],
             },
         ]
+
+    def _resolve_prompt(self):
+        prompt = self.config.get("prompt", None)
+        if prompt is not None:
+            return prompt
+
+        model_prompt = self.config.model.get("prompt", None)
+        if model_prompt is not None:
+            return model_prompt
+
+        data_prompt = self.config.data.get("prompt", None)
+        if data_prompt is not None:
+            return data_prompt
+
+        raise ValueError(
+            "Prompt config not found. Set model.prompt in model config or prompt in inference/data config."
+        )
 

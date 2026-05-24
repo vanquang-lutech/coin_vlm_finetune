@@ -7,7 +7,3 @@ generation:
 
 preprocessing:
   max_image_size: 768
-
-prompt:
-  system: "You are an expert US coin analyst."
-  user: "Analyze the coin image and extract year and mint mark. Return JSON: {\"year\": \"YYYY\", \"mint_mark\": \"X\"}"

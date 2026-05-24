@@ -20,7 +20,7 @@ def parse_args():
     parser.add_argument(
         "--method_config",
         default=None,
-        help="Optional method config to override model/training for a finetune backend.",
+        help="Optional backend config to set model/training backend and backend-specific settings.",
     )
     parser.add_argument(
         "--inference_config",

@@ -1,0 +1,9 @@
+model:
+  backend: "full_finetune"
+  load_in_4bit: false
+  lora: null
+  quantization: null
+
+training:
+  backend: "full_finetune"
+  deepspeed: null

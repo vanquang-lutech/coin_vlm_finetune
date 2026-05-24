@@ -1,6 +1,6 @@
-backend: "hf_peft"
 name: "Qwen/Qwen3-VL-8B-Instruct"
 model_name: "Qwen/Qwen3-VL-8B-Instruct"
+unsloth_name: "unsloth/Qwen3-VL-8B-Instruct"
 trust_remote_code: true
 torch_dtype: "bfloat16"
 device_map: "auto"
@@ -11,3 +11,12 @@ max_seq_length: 2048
 processor:
   min_pixels: 256
   max_pixels: 1024
+
+prompt:
+  system: "You are an expert coin analyst."
+  user: "Analyze the coin image and extract year and mint mark. Return JSON: {\"year\": \"YYYY\", \"mint_mark\": \"X\"}"
+  response_format: "json"
+  response_template:
+    year: "{year}"
+    mint_mark: "{mint_mark}"
+  assistant_start_token: "<|im_start|>assistant"

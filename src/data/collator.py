@@ -10,7 +10,7 @@ class CoinDataCollator:
     def __init__(self, processor, config):
         self.processor = processor
         self.config = config
-        self.prompt = config.data.prompt
+        self.prompt = self._resolve_prompt()
 
     def __call__(self, batch: list[dict]) -> dict[str, Any]:
         images = [item["image"] for item in batch]
@@ -59,6 +59,23 @@ class CoinDataCollator:
                 "content": self._build_response(label),
             },
         ]
+
+    def _resolve_prompt(self):
+        model_prompt = self.config.model.get("prompt", None)
+        if model_prompt is not None:
+            return model_prompt
+
+        prompt = self.config.get("prompt", None)
+        if prompt is not None:
+            return prompt
+
+        data_prompt = self.config.data.get("prompt", None)
+        if data_prompt is not None:
+            return data_prompt
+
+        raise ValueError(
+            "Prompt config not found. Set model.prompt in model config or prompt in inference/data config."
+        )
 
     def _build_response(self, label: dict) -> str:
 
@@ -113,6 +130,14 @@ class CoinDataCollator:
         return full_text
 
     def _get_assistant_start_token(self) -> str | None:
+
+        prompt_token = getattr(self.prompt, "assistant_start_token", None)
+        if prompt_token:
+            return prompt_token
+
+        model_token = self.config.model.get("assistant_start_token", None)
+        if model_token:
+            return model_token
 
         model_name: str = self.config.model.model_name.lower()
 

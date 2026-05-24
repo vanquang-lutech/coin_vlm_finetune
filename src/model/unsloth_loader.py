@@ -13,12 +13,18 @@ class UnslothModelLoader(BaseModelLoader):
         except ImportError:
             raise ImportError("Please install unsloth library to use UnslothModelLoader.")
         
-        model_config = self.config.model 
+        model_config = self.config.model
+        unsloth_name = model_config.get("unsloth_name", None)
+        if not unsloth_name:
+            raise ValueError(
+                "Unsloth backend requires model.unsloth_name to be set to an Unsloth repo."
+            )
         processor_config = self.config.get("processor", None)
         if processor_config is None:
             processor_config = self.config.model.get("processor", None)
+        logger.info("Loading Unsloth model repo: %s", unsloth_name)
         model, processor = FastVisionModel.from_pretrained(
-            model_name = model_config.name,
+            model_name = unsloth_name,
             load_in_4bit = model_config.load_in_4bit,
             max_sequence_length = model_config.max_seq_length,
         )

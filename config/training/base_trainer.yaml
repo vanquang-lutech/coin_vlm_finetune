@@ -1,5 +1,4 @@
 # training config: epochs, batch_size, lr, scheduler...
-backend: "hf_peft"
 output_dir: "outputs/checkpoints"
 result_dir: "outputs/results"
 num_train_epochs: 3
@@ -24,9 +23,8 @@ logging_steps: 10
 dataloader_num_workers: 4
 dataloader_pin_memory: true
 seed: 42
-report_to: "wandb"
+report_to: "none"
 run_name: "coin-vlm"
-max_seq_length: 2048
 max_seq_length: 2048
 early_stopping_patience:
   enabled: true
