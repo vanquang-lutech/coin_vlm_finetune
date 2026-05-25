@@ -1,6 +1,6 @@
 name: "Qwen/Qwen3-VL-8B-Instruct"
 model_name: "Qwen/Qwen3-VL-8B-Instruct"
-unsloth_name: "unsloth/Qwen3-VL-8B-Instruct"
+unsloth_name: "unsloth/Qwen3-VL-8B-Instruct-unsloth-bnb-4bit"
 trust_remote_code: true
 torch_dtype: "bfloat16"
 device_map: "auto"
