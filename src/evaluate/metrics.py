@@ -63,7 +63,7 @@ def mint_mark_accuracy(pred: dict, gold: dict) -> bool:
     )
 
 
-def exact_match(pred: dict, gold: dict) -> bool:
+def extract_match(pred: dict, gold: dict) -> bool:
     return year_accuracy(pred, gold) and mint_mark_accuracy(pred, gold)
 
 def build_confusion_matrix(
@@ -103,7 +103,7 @@ def compute_metrics(predictions, references):
             n_parse_errors += 1
             continue
 
-        if exact_match(pred, gold):
+        if extract_match(pred, gold):
             n_exact += 1
         if year_accuracy(pred, gold):
             n_year_correct += 1
@@ -113,7 +113,7 @@ def compute_metrics(predictions, references):
     valid_n = n - n_parse_errors
 
     return {
-        "exact_match": round(n_exact / n, 4) if n > 0 else 0.0,
+        "extract_match": round(n_exact / n, 4) if n > 0 else 0.0,
         "year_accuracy": round(n_year_correct / valid_n, 4) if valid_n > 0 else 0.0,
         "mint_mark_accuracy": round(n_mint_correct / valid_n, 4) if valid_n > 0 else 0.0,
         "parse_error_rate": round(n_parse_errors / n, 4) if n > 0 else 0.0,

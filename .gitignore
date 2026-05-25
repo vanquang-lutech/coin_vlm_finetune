@@ -8,3 +8,6 @@ venv/
 .env
 data/processed/augmented/**
 */*/labels.json
+__pycache__/
+*.log
+unsloth_compiled_cache/

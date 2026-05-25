@@ -15,8 +15,15 @@ Fine-tune a vision-language model to extract coin metadata. The current pipeline
 
 ### Install
 
+Install requirements first, then pin `transformers`/`tokenizers` and install Unsloth + Unsloth Zoo.
+
 ```bash
 pip install -r requirements.txt
+
+python -m pip install -U --no-cache-dir --no-deps "transformers==4.56.2"
+python -m pip install -U --no-cache-dir --no-deps "tokenizers>=0.22.0,<0.23.0"
+python -m pip install --no-cache-dir --no-deps "unsloth==2026.5.7"
+python -m pip install --no-cache-dir --no-deps "unsloth_zoo==2026.5.4"
 ```
 
 ### Config layout

@@ -7,8 +7,8 @@ logger = get_logger(__name__)
 
 class UnslothTrainer(BaseTrainer):
     def _build_args(self):
-        from trl import SFTConfig
         from unsloth import is_bf16_supported
+        from trl import SFTConfig
         training_config = self.config.training
 
         return SFTConfig(
@@ -54,4 +54,3 @@ class UnslothTrainer(BaseTrainer):
             callbacks = self._get_callbacks(),
         )
         return trainer
-        

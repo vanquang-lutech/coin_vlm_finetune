@@ -1,8 +1,6 @@
 from omegaconf import DictConfig
-from transformers.testing_utils import backend
 from src.utils import get_logger
 from torch.utils.data import Dataset
-
 from .base import BaseTrainer
 from .unsloth_trainer import UnslothTrainer
 from .hf_peft_trainer import HFPeftTrainer
