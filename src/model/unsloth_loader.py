@@ -26,7 +26,7 @@ class UnslothModelLoader(BaseModelLoader):
         model, processor = FastVisionModel.from_pretrained(
             model_name = unsloth_name,
             load_in_4bit = model_config.load_in_4bit,
-            max_sequence_length = model_config.max_seq_length,
+            use_gradient_checkpointing="unsloth",
         )
 
         self.processor = processor
