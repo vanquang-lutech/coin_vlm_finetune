@@ -36,6 +36,7 @@ class CoinDataCollator:
 
         inputs["labels"] = self._mask_labels(
             input_ids=inputs["input_ids"],
+            attention_mask=inputs.get("attention_mask"),
             texts=texts,
         )
 
@@ -96,6 +97,7 @@ class CoinDataCollator:
     def _mask_labels(
         self,
         input_ids: torch.Tensor,
+        attention_mask: torch.Tensor | None,
         texts: list[str],
     ) -> torch.Tensor:
         """Mask instruction tokens (system + user + assistant header) with -100,
@@ -106,6 +108,8 @@ class CoinDataCollator:
         """
 
         labels = input_ids.clone()
+        if attention_mask is not None:
+            labels = labels.masked_fill(attention_mask.eq(0), -100)
 
         assistant_token = self._get_assistant_start_token()
         if not assistant_token:
@@ -157,16 +161,16 @@ class CoinDataCollator:
             if i == 0 and not hasattr(self, '_mask_debug_done'):
                 self._mask_debug_done = True
                 n_total = input_ids[i].shape[0]
-                n_masked = mask_end
-                n_trained = n_total - n_masked
-                response_ids = input_ids[i, mask_end:]
+                n_ignored = labels[i].eq(-100).sum().item()
+                n_trained = labels[i].ne(-100).sum().item()
+                response_ids = input_ids[i][labels[i].ne(-100)]
                 response_text = self.processor.tokenizer.decode(
                     response_ids, skip_special_tokens=True
                 )
                 logger.info(
-                    "[Label Masking] Total tokens: %d | Masked (instruction): %d | "
+                    "[Label Masking] Total tokens: %d | Ignored (prompt/pad): %d | "
                     "Trained (response): %d | Response preview: '%s'",
-                    n_total, n_masked, n_trained, response_text[:200],
+                    n_total, n_ignored, n_trained, response_text[:200],
                 )
 
         return labels
