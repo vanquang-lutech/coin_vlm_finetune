@@ -3,7 +3,7 @@ from .evaluator import CoinEvaluator
 
 __all__ = [
     "parse_response",
-    "exact_match",
+    "extract_match",
     "compute_metrics",
     "CoinEvaluator",
 ]

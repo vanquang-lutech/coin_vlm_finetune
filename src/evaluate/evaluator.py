@@ -220,7 +220,7 @@ class CoinEvaluator:
         logger.info("Parse errors: %d (%.1f%%)",
                     metrics["n_parse_errors"],
                     metrics["parse_error_rate"] * 100)
-        logger.info("Exact match:  %.2f%%", metrics["exact_match"] * 100)
+        logger.info("Extract match:  %.2f%%", metrics["extract_match"] * 100)
         logger.info("Year accuracy: %.2f%%", metrics["year_accuracy"] * 100)
         logger.info("Mint mark accuracy: %.2f%%", metrics["mint_mark_accuracy"] * 100)
         logger.info("Confusion matrix (mint_mark):")
@@ -232,7 +232,7 @@ class CoinEvaluator:
             import wandb
             if wandb.run is not None:
                 wandb.log({
-                    "eval/exact_match": metrics["exact_match"],
+                    "eval/extract_match": metrics["extract_match"],
                     "eval/year_accuracy": metrics["year_accuracy"],
                     "eval/mint_mark_accuracy": metrics["mint_mark_accuracy"],
                     "eval/parse_error_rate": metrics["parse_error_rate"],
