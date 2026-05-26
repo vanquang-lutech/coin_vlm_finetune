@@ -52,6 +52,10 @@ class UnslothModelLoader(BaseModelLoader):
         )
         self.model = FastVisionModel.get_peft_model(
             self.model,
+            finetune_vision_layers     = True, 
+            finetune_language_layers   = True, 
+            finetune_attention_modules = True, 
+            finetune_mlp_modules       = True, 
             r = lora_config.r,
             lora_alpha = lora_config.lora_alpha,
             lora_dropout = lora_config.lora_dropout,
@@ -59,4 +63,6 @@ class UnslothModelLoader(BaseModelLoader):
             bias = lora_config.bias,
             use_gradient_checkpointing = lora_config.use_gradient_checkpointing,
             random_state = self.config.training.get("seed", 42),
+            use_rslora = False,  # We support rank stabilized LoRA
+            loftq_config = None, # And LoftQ
         )

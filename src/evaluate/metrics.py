@@ -14,6 +14,13 @@ def parse_response(response: str) -> dict | None:
     if not response or not response.strip():
         return None
 
+    # Strip thinking and tool_response tags if present (Qwen3 artifacts)
+    response = re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL).strip()
+    response = re.sub(r'</?tool_response>', '', response).strip()
+
+    if not response:
+        return None
+
     try:
         parsed = json.loads(response.strip())
         return _extract_fields(parsed)

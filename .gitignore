@@ -11,3 +11,8 @@ data/processed/augmented/**
 __pycache__/
 *.log
 unsloth_compiled_cache/
+*.safetensors
+outputs/results/**
+data/models/
+wandb/
+outputs/checkpoints/

@@ -56,6 +56,9 @@ def main():
         inference_config = args.inference_config,
         overrides = args.override,
     )
+
+    if config.model.backend == "unsloth" or config.training.backend == "unsloth":
+        import unsloth
  
     set_seed(config.training.seed)
     init_wandb(config)

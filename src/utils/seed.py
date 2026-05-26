@@ -3,11 +3,12 @@ import random
 
 import numpy as np
 import torch
-import transformers
 
 logger = logging.getLogger(__name__)
 
 def set_seed(seed: int) -> None:
+
+    import transformers
 
     random.seed(seed)
     np.random.seed(seed)

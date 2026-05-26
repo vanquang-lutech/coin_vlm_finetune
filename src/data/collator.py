@@ -22,7 +22,8 @@ class CoinDataCollator:
             self.processor.apply_chat_template(
                 messages,
                 tokenize=False,
-                add_generation_prompt=False,    
+                add_generation_prompt=False,
+                enable_thinking=False,
             ) for messages in messages_batch
         ]
 
@@ -97,28 +98,93 @@ class CoinDataCollator:
         input_ids: torch.Tensor,
         texts: list[str],
     ) -> torch.Tensor:
+        """Mask instruction tokens (system + user + assistant header) with -100,
+        keeping only the assistant response content for training.
+
+        Uses token-level search in input_ids to correctly handle image tokens
+        that get expanded during processor encoding.
+        """
 
         labels = input_ids.clone()
 
-        for i, text in enumerate(texts):
-            instruction_text = self._get_instruction_only(text)
+        assistant_token = self._get_assistant_start_token()
+        if not assistant_token:
+            logger.warning("No assistant start token found. Labels will not be masked.")
+            return labels
 
-            instruction_ids = self.processor.tokenizer(
-                instruction_text,
-                return_tensors="pt",
-                add_special_tokens=False,
-            ).input_ids
+        # Tokenize the assistant header (including trailing newline) to search in input_ids
+        assistant_header = assistant_token + "\n"
+        header_ids = self.processor.tokenizer.encode(
+            assistant_header,
+            add_special_tokens=False,
+        )
 
-            instruction_len = instruction_ids.shape[-1]
+        for i in range(input_ids.shape[0]):
+            seq = input_ids[i].tolist()
 
-            labels[i, :instruction_len] = -100
+            # Search for assistant header token IDs in input_ids (from end, in case of duplicates)
+            match_pos = self._find_last_subsequence(seq, header_ids)
+
+            if match_pos is None:
+                # Fallback: try without trailing newline
+                header_ids_no_nl = self.processor.tokenizer.encode(
+                    assistant_token,
+                    add_special_tokens=False,
+                )
+                match_pos = self._find_last_subsequence(seq, header_ids_no_nl)
+                if match_pos is not None:
+                    mask_end = match_pos + len(header_ids_no_nl)
+                else:
+                    # Last resort: fall back to text-based approach (may be inaccurate)
+                    logger.warning(
+                        "Could not find assistant header in input_ids (sample %d). "
+                        "Falling back to text-based masking.",
+                        i,
+                    )
+                    instruction_text = self._get_instruction_text(texts[i], assistant_token)
+                    fallback_ids = self.processor.tokenizer(
+                        instruction_text,
+                        return_tensors="pt",
+                        add_special_tokens=False,
+                    ).input_ids
+                    mask_end = fallback_ids.shape[-1]
+            else:
+                mask_end = match_pos + len(header_ids)
+
+            labels[i, :mask_end] = -100
+
+            # Debug: log masking info for first sample of first batch
+            if i == 0 and not hasattr(self, '_mask_debug_done'):
+                self._mask_debug_done = True
+                n_total = input_ids[i].shape[0]
+                n_masked = mask_end
+                n_trained = n_total - n_masked
+                response_ids = input_ids[i, mask_end:]
+                response_text = self.processor.tokenizer.decode(
+                    response_ids, skip_special_tokens=True
+                )
+                logger.info(
+                    "[Label Masking] Total tokens: %d | Masked (instruction): %d | "
+                    "Trained (response): %d | Response preview: '%s'",
+                    n_total, n_masked, n_trained, response_text[:200],
+                )
 
         return labels
 
-    def _get_instruction_only(self, full_text: str) -> str:
+    @staticmethod
+    def _find_last_subsequence(seq: list[int], subseq: list[int]) -> int | None:
+        """Find the start index of the last occurrence of subseq in seq."""
+        n, m = len(seq), len(subseq)
+        if m == 0 or m > n:
+            return None
+        for i in range(n - m, -1, -1):
+            if seq[i:i + m] == subseq:
+                return i
+        return None
 
-        assistant_token = self._get_assistant_start_token()
-        if assistant_token and assistant_token in full_text:
+    def _get_instruction_text(self, full_text: str, assistant_token: str) -> str:
+        """Fallback: extract instruction portion from raw text string."""
+        if assistant_token in full_text:
             idx = full_text.index(assistant_token) + len(assistant_token)
             return full_text[:idx]
 

@@ -39,10 +39,15 @@ class UnslothTrainer(BaseTrainer):
             dataset_kwargs={"skip_prepare_dataset": True}, # handle data preparation in the Dataset class, so skip it in the trainer
             dataset_text_field="", # dataset will return dict with "image" and "label" keys, no need to specify text field
             max_seq_length = training_config.max_seq_length,
+            report_to= training_config.report_to,
+            run_name= training_config.run_name,
         )
     
     def _build_trainer(self, args):
         from trl import SFTTrainer
+        from unsloth import FastVisionModel
+
+        FastVisionModel.for_training(self.model)
         collator = CoinDataCollator(self.processor, self.config)
         trainer = SFTTrainer(
             model = self.model,

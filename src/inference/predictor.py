@@ -29,7 +29,8 @@ class CoinPredictor:
         text = self.processor.apply_chat_template(
             messages,
             tokenize=False,
-            add_generation_prompt=True,    
+            add_generation_prompt=True,
+            enable_thinking=False,
         )
 
         response = self._generate([pil_image], [text])[0]
@@ -50,6 +51,7 @@ class CoinPredictor:
                 self._build_messages(),
                 tokenize=False,
                 add_generation_prompt=True,
+                enable_thinking=False,
             )
 
             texts = [text] * len(pil_images)
@@ -96,6 +98,11 @@ class CoinPredictor:
         
     def _generate(self, images, texts):
         generation_config = self.config.get("generation", {})
+
+        # Decoder-only models need left padding for correct generation
+        original_padding_side = self.processor.tokenizer.padding_side
+        self.processor.tokenizer.padding_side = "left"
+
         inputs = self.processor(
             images = images, 
             text = texts,
@@ -113,6 +120,9 @@ class CoinPredictor:
                 pad_token_id = self.processor.tokenizer.pad_token_id,
                 eos_token_id = self.processor.tokenizer.eos_token_id,
             )
+
+        # Restore original padding side
+        self.processor.tokenizer.padding_side = original_padding_side
         
         input_len = inputs["input_ids"].shape[1]
         return self.processor.batch_decode(
@@ -147,13 +157,13 @@ class CoinPredictor:
         ]
 
     def _resolve_prompt(self):
-        prompt = self.config.get("prompt", None)
-        if prompt is not None:
-            return prompt
-
         model_prompt = self.config.model.get("prompt", None)
         if model_prompt is not None:
             return model_prompt
+
+        prompt = self.config.get("prompt", None)
+        if prompt is not None:
+            return prompt
 
         data_prompt = self.config.data.get("prompt", None)
         if data_prompt is not None:

@@ -3,6 +3,9 @@ import os
 from typing import Any
 import sys
 from omegaconf import DictConfig, OmegaConf
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +39,11 @@ def init_wandb(cfg: DictConfig) -> None:
  
     try:
         import wandb
+        wandb_api_key = os.getenv("WANDB_API_KEY")
+        if not wandb_api_key:
+            raise ValueError("WANDB_API_KEY environment variable is not set")
+        else:
+            wandb.login(key=wandb_api_key, relogin=True)
     except ImportError:
         raise ImportError(
             "wandb not installed. Run: pip install wandb"
