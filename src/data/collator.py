@@ -27,17 +27,76 @@ class CoinDataCollator:
             ) for messages in messages_batch
         ]
 
-        inputs = self.processor(
+        # Prompt-only version (system + user, with assistant header appended
+        # via add_generation_prompt=True). Used to compute exact mask boundary
+        # per sample without relying on BPE-fragile subsequence search.
+        prompt_only_messages = [
+            [m for m in msgs if m["role"] != "assistant"] for msgs in messages_batch
+        ]
+        prompt_only_texts = [
+            self.processor.apply_chat_template(
+                msgs,
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=False,
+            ) for msgs in prompt_only_messages
+        ]
+
+        # Sanity check (one-time): the prompt-only render with
+        # add_generation_prompt=True must be a textual prefix of the full
+        # render with add_generation_prompt=False. If the chat template
+        # diverges between these two modes (e.g. inserts different
+        # whitespace, role tags, or system additions only in one mode),
+        # the prompt-only length we compute below will NOT correspond to
+        # the assistant-response boundary in the full input_ids, and
+        # masking will be silently wrong. Fail loudly on first batch.
+        if not getattr(self, "_template_prefix_checked", False):
+            self._template_prefix_checked = True
+            for i, (full, prefix) in enumerate(zip(texts, prompt_only_texts)):
+                if not full.startswith(prefix):
+                    raise RuntimeError(
+                        "Chat template divergence detected (sample %d): "
+                        "prompt-only render (add_generation_prompt=True) is NOT "
+                        "a prefix of the full render (add_generation_prompt=False). "
+                        "Label masking would be incorrect.\n"
+                        "--- prompt-only (last 200 chars) ---\n%s\n"
+                        "--- full (last 200 chars) ---\n%s"
+                        % (i, prefix[-200:], full[-200:])
+                    )
+            logger.info(
+                "[Collator] Chat template prefix check passed "
+                "(prompt-only render is a prefix of full render)."
+            )
+
+        max_seq_length = self.config.training.get("max_seq_length", None)
+        processor_kwargs = dict(
             images=images,
-            text=texts,
             return_tensors="pt",
             padding=True,
         )
+        if max_seq_length is not None:
+            processor_kwargs["truncation"] = True
+            processor_kwargs["max_length"] = max_seq_length
+
+        inputs = self.processor(text=texts, **processor_kwargs)
+
+        # Tokenize prompt-only with SAME images so image-token expansion is
+        # identical to the full pass. The non-pad length of each prompt-only
+        # row is the exact index in input_ids where the assistant response
+        # content begins.
+        prompt_inputs = self.processor(text=prompt_only_texts, **processor_kwargs)
+        prompt_attn = prompt_inputs.get("attention_mask")
+        if prompt_attn is None:
+            # Defensive: fall back to full length, masking everything; the
+            # all-masked safeguard inside _mask_labels will recover.
+            prompt_lengths = [prompt_inputs["input_ids"].shape[1]] * len(texts)
+        else:
+            prompt_lengths = prompt_attn.sum(dim=1).tolist()
 
         inputs["labels"] = self._mask_labels(
             input_ids=inputs["input_ids"],
             attention_mask=inputs.get("attention_mask"),
-            texts=texts,
+            prompt_lengths=prompt_lengths,
         )
 
         return inputs
@@ -98,64 +157,48 @@ class CoinDataCollator:
         self,
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor | None,
-        texts: list[str],
+        prompt_lengths: list[int],
     ) -> torch.Tensor:
         """Mask instruction tokens (system + user + assistant header) with -100,
         keeping only the assistant response content for training.
 
-        Uses token-level search in input_ids to correctly handle image tokens
-        that get expanded during processor encoding.
+        ``prompt_lengths[i]`` is the number of non-pad tokens produced when
+        the same image + prompt-only template (with ``add_generation_prompt=
+        True``) is run through the processor. Because both the prompt-only
+        pass and the full pass go through the SAME processor pipeline (same
+        chat template, same image-token expansion, same right-padding), this
+        length is the exact index in ``input_ids[i]`` where the assistant
+        response content begins — no BPE-fragile subsequence search needed.
         """
 
         labels = input_ids.clone()
         if attention_mask is not None:
             labels = labels.masked_fill(attention_mask.eq(0), -100)
 
-        assistant_token = self._get_assistant_start_token()
-        if not assistant_token:
-            logger.warning("No assistant start token found. Labels will not be masked.")
-            return labels
-
-        # Tokenize the assistant header (including trailing newline) to search in input_ids
-        assistant_header = assistant_token + "\n"
-        header_ids = self.processor.tokenizer.encode(
-            assistant_header,
-            add_special_tokens=False,
-        )
+        seq_len = labels.shape[1]
 
         for i in range(input_ids.shape[0]):
-            seq = input_ids[i].tolist()
-
-            # Search for assistant header token IDs in input_ids (from end, in case of duplicates)
-            match_pos = self._find_last_subsequence(seq, header_ids)
-
-            if match_pos is None:
-                # Fallback: try without trailing newline
-                header_ids_no_nl = self.processor.tokenizer.encode(
-                    assistant_token,
-                    add_special_tokens=False,
-                )
-                match_pos = self._find_last_subsequence(seq, header_ids_no_nl)
-                if match_pos is not None:
-                    mask_end = match_pos + len(header_ids_no_nl)
-                else:
-                    # Last resort: fall back to text-based approach (may be inaccurate)
-                    logger.warning(
-                        "Could not find assistant header in input_ids (sample %d). "
-                        "Falling back to text-based masking.",
-                        i,
-                    )
-                    instruction_text = self._get_instruction_text(texts[i], assistant_token)
-                    fallback_ids = self.processor.tokenizer(
-                        instruction_text,
-                        return_tensors="pt",
-                        add_special_tokens=False,
-                    ).input_ids
-                    mask_end = fallback_ids.shape[-1]
-            else:
-                mask_end = match_pos + len(header_ids)
-
+            mask_end = min(int(prompt_lengths[i]), seq_len)
             labels[i, :mask_end] = -100
+
+            # Safety: ensure at least one trainable token exists for this sample.
+            # If everything ended up masked (truncation cut off the assistant
+            # response, or header search overshot), unmask the final token so
+            # the loss does not collapse to NaN (mean over empty selection).
+            if not labels[i].ne(-100).any():
+                logger.error(
+                    "All tokens masked for sample %d (seq_len=%d, mask_end=%d). "
+                    "This sample contributes no training signal; check max_seq_length "
+                    "and assistant-header detection.",
+                    i, seq_len, mask_end,
+                )
+                # Restore the final non-pad position so the batch loss stays finite.
+                if attention_mask is not None:
+                    last_valid = int(attention_mask[i].sum().item()) - 1
+                else:
+                    last_valid = seq_len - 1
+                if last_valid >= 0:
+                    labels[i, last_valid] = input_ids[i, last_valid]
 
             # Debug: log masking info for first sample of first batch
             if i == 0 and not hasattr(self, '_mask_debug_done'):

@@ -7,7 +7,7 @@ venv/
 .venv/
 .env
 data/processed/augmented/**
-*/*/labels.json
+raw/*/labels.json
 __pycache__/
 *.log
 unsloth_compiled_cache/

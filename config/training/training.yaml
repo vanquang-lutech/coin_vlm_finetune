@@ -2,11 +2,11 @@ output_dir: "outputs/checkpoints"
 result_dir: "outputs/results"
  
 # Core hyperparams
-num_train_epochs: 6
+num_train_epochs: 5
 per_device_train_batch_size: 4
 per_device_eval_batch_size: 4
 gradient_accumulation_steps: 2
-learning_rate: 2.0e-4
+learning_rate: 1.0e-4
 lr_scheduler_type: "cosine"
 warmup_ratio: 0.03
 weight_decay: 0.01
@@ -37,6 +37,10 @@ dataloader_pin_memory: true
  
 # Seed
 seed: 42
+# Bit-exact reproducibility (cudnn.deterministic=True, benchmark=False).
+# Costs ~10-30% throughput on vision; leave false unless debugging
+# divergence/reproducing a paper number.
+deterministic: false
  
 early_stopping_patience:
   enabled: true

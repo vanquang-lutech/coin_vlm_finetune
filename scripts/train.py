@@ -60,7 +60,10 @@ def main():
     if config.model.backend == "unsloth" or config.training.backend == "unsloth":
         import unsloth
  
-    set_seed(config.training.seed)
+    set_seed(
+        config.training.seed,
+        deterministic=config.training.get("deterministic", False),
+    )
     init_wandb(config)
  
     loader = get_model_loader(config)

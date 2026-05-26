@@ -10,7 +10,7 @@ max_seq_length: 2048
  
 processor:
   min_pixels: 256
-  max_pixels: 1024
+  max_pixels: 512
 
 prompt:
   system: "You are an expert coin analyst."

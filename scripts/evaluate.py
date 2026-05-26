@@ -46,7 +46,10 @@ def main():
         overrides = args.override,
     )
  
-    set_seed(config.training.seed)
+    set_seed(
+        config.training.seed,
+        deterministic=config.training.get("deterministic", False),
+    )
  
     logger.info("Loading '%s' split...", args.split)
     dataset = CoinDataset(config, split=args.split)

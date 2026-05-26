@@ -1,9 +1,8 @@
-from transformers import Trainer, EarlyStoppingCallback
+from transformers import Trainer
 
 from src.utils import get_logger
 from src.data.collator import CoinDataCollator
 from .base import BaseTrainer
-from .callbacks import GradNormCallback, MemoryCallback
 
 logger = get_logger(__name__)
 

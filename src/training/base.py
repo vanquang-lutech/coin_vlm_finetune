@@ -67,9 +67,25 @@ class BaseTrainer(ABC):
             result.global_step,
             result.training_loss,
         )
-        self.trainer.save_model()  # Save final model
-        self.processor.save_pretrained(self.trainer.args.output_dir)  # Save processor config
-        logger.info(f"Model and processor saved to {self.trainer.args.output_dir}")
+        # Save final model + processor side-by-side at the trainer output_dir
+        # so a "load latest" workflow keeps working.
+        final_dir = self.trainer.args.output_dir
+        self.trainer.save_model(final_dir)
+        self.processor.save_pretrained(final_dir)
+
+        # Also save the processor INSIDE the best/last checkpoint folder so
+        # evaluator._load_from_checkpoint(checkpoint_path) can find it without
+        # falling back to the base model's processor.
+        try:
+            from transformers.trainer_utils import get_last_checkpoint
+            last_ckpt = get_last_checkpoint(final_dir)
+            if last_ckpt is not None:
+                self.processor.save_pretrained(last_ckpt)
+                logger.info(f"Processor also saved into checkpoint dir: {last_ckpt}")
+        except Exception as e:
+            logger.warning("Could not save processor into checkpoint dir: %s", e)
+
+        logger.info(f"Model and processor saved to {final_dir}")
         return result
 
     @abstractmethod

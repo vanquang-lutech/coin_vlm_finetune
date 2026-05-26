@@ -86,7 +86,7 @@ def main():
 	os.makedirs(output_dir, exist_ok=True)
 	with open(os.path.join(output_dir, "train.json"), "w", encoding="utf-8") as f:
 		json.dump(train, f, indent=2)
-	with open(os.path.join(output_dir, "val.json"), "w", encoding="utf-8") as f:
+	with open(os.path.join(output_dir, "validation.json"), "w", encoding="utf-8") as f:
 		json.dump(val, f, indent=2)
 	with open(os.path.join(output_dir, "test.json"), "w", encoding="utf-8") as f:
 		json.dump(test, f, indent=2)

@@ -122,35 +122,37 @@ class CoinEvaluator:
     def _generate(self, images: list, texts: list[str]) -> list[str]:
         generation_config = self.config.get("generation", {})
 
-        # Decoder-only models need left padding for correct generation
+        # Decoder-only models need left padding for correct generation.
+        # Use try/finally so an exception in generate() doesn't leak
+        # padding_side="left" into subsequent training batches.
         original_padding_side = self.processor.tokenizer.padding_side
         self.processor.tokenizer.padding_side = "left"
+        try:
+            inputs = self.processor(
+                images = images,
+                text = texts,
+                return_tensors = "pt",
+                padding = True,
+            ).to(self.device)
 
-        inputs = self.processor(
-            images = images,
-            text = texts,
-            return_tensors = "pt",
-            padding = True,
-        ).to(self.device)
+            outputs = self.model.generate(
+                **inputs,
+                max_new_tokens = generation_config.get("max_new_tokens", 256),
+                do_sample = generation_config.get("do_sample", False),
+                temperature = generation_config.get("temperature", 1.0),
+                top_p = generation_config.get("top_p", 1.0),
+                pad_token_id = self.processor.tokenizer.pad_token_id,
+                eos_token_id = self.processor.tokenizer.eos_token_id,
+            )
 
-        outputs = self.model.generate(
-            **inputs,
-            max_new_tokens = generation_config.get("max_new_tokens", 256),
-            do_sample = generation_config.get("do_sample", False),
-            temperature = generation_config.get("temperature", 1.0),
-            top_p = generation_config.get("top_p", 1.0),
-            pad_token_id = self.processor.tokenizer.pad_token_id,
-            eos_token_id = self.processor.tokenizer.eos_token_id,
-        )
-
-        # Restore original padding side for training
-        self.processor.tokenizer.padding_side = original_padding_side
-
-        input_len = inputs["input_ids"].shape[1]
-        return self.processor.batch_decode(
-            outputs[:, input_len:],
-            skip_special_tokens=True,
-        )
+            input_len = inputs["input_ids"].shape[1]
+            return self.processor.batch_decode(
+                outputs[:, input_len:],
+                skip_special_tokens=True,
+            )
+        finally:
+            # Restore original padding side for training, even on exception.
+            self.processor.tokenizer.padding_side = original_padding_side
 
     def _eval_collate_fn(self, batch: list[dict]) -> dict:
 
