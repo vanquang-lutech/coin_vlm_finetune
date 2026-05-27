@@ -15,7 +15,7 @@ class BaseModelLoader(ABC):
 
 
     def load(self) -> tuple:
- 
+
         model_config = self.config.model
         logger.info(
             "[%s] Loading '%s'...",
@@ -28,6 +28,23 @@ class BaseModelLoader(ABC):
         self._apply_adapter()
 
         self.print_trainable_params()
+        return self.model, self.processor
+
+    def load_for_inference(self) -> tuple:
+        """Load model + processor for evaluation/inference.
+
+        Mirrors load() but skips _apply_adapter() (no training LoRA wrap).
+        Subclasses (e.g. UnslothModelLoader) may override to enable
+        backend-specific fast inference kernels.
+        """
+        model_config = self.config.model
+        logger.info(
+            "[%s] Loading '%s' for inference...",
+            self.config.model.backend.upper(),
+            model_config.name,
+        )
+        self.processor = self._load_processor()
+        self.model = self._load_model()
         return self.model, self.processor
 
 

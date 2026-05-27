@@ -42,6 +42,18 @@ class UnslothModelLoader(BaseModelLoader):
             logger.info("Processor loaded with default image processor settings.")
         return model
     
+    def load_for_inference(self) -> tuple:
+        from unsloth import FastVisionModel
+
+        model_config = self.config.model
+        logger.info(
+            "[UNSLOTH] Loading '%s' for inference...", model_config.name,
+        )
+        self.processor = self._load_processor()
+        self.model = self._load_model()
+        FastVisionModel.for_inference(self.model)
+        return self.model, self.processor
+
     def _apply_adapter(self):
         from unsloth import FastVisionModel
         lora_config = self.config.get("lora", None)

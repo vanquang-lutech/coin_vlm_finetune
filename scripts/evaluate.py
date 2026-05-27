@@ -54,7 +54,13 @@ def main():
         inference_config = args.inference_config,
         overrides = args.override,
     )
- 
+
+    # Mirror train.py: unsloth must be imported BEFORE transformers for its
+    # patches to apply. Without this, FastVisionModel falls back to the slow
+    # path and 4-bit kernels won't engage during eval.
+    if config.model.backend == "unsloth" or config.training.backend == "unsloth":
+        import unsloth  # noqa: F401
+
     set_seed(
         config.training.seed,
         deterministic=config.training.get("deterministic", False),

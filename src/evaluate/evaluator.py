@@ -84,23 +84,20 @@ class CoinEvaluator:
 
 
     def _load_base_model(self) -> tuple:
-        from transformers import AutoProcessor, AutoModelForImageTextToText
+        """Load the un-finetuned base model via the configured backend loader.
 
-        base_model_name = self.config.model.name
-        logger.info("Loading base (un-finetuned) model: %s", base_model_name)
+        Mirrors training's loading path (unsloth/hf_peft/full_finetune) so that
+        baseline eval runs at the same VRAM footprint as training.
+        """
+        from src.model.factory import get_model_loader
 
-        processor = AutoProcessor.from_pretrained(base_model_name)
-        model = AutoModelForImageTextToText.from_pretrained(
-            base_model_name,
-            torch_dtype=torch.bfloat16,
-            device_map="auto",
-        )
+        loader = get_model_loader(self.config)
+        model, processor = loader.load_for_inference()
         model.eval()
         return model, processor
 
 
     def _load_from_checkpoint(self, checkpoint_path: str) -> tuple:
-
         from transformers import AutoProcessor, AutoModelForImageTextToText
 
         checkpoint_path = Path(checkpoint_path)
@@ -108,29 +105,42 @@ class CoinEvaluator:
             raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
         logger.info("Loading model from checkpoint: %s", checkpoint_path)
 
-        processor = AutoProcessor.from_pretrained(checkpoint_path)
+        is_lora = (checkpoint_path / "adapter_config.json").exists()
 
-        if (checkpoint_path / "adapter_config.json").exists():
-            # LoRA adapter
-            logger.info("Detected LoRA adapter, loading base model + adapter...")
-            import torch
-            from peft import PeftModel
-
-            base_model_name = self.config.model.name
-            base_model = AutoModelForImageTextToText.from_pretrained(
-                base_model_name,
-                torch_dtype = torch.bfloat16,
-                device_map  = "auto",
+        if is_lora:
+            # LoRA adapter: load base via configured backend loader (mirrors train),
+            # then attach the adapter weights.
+            logger.info(
+                "Detected LoRA adapter. Loading base via [%s] loader + attaching adapter...",
+                self.config.model.backend.upper(),
             )
-            model = PeftModel.from_pretrained(base_model, checkpoint_path)
+            from peft import PeftModel
+            from src.model.factory import get_model_loader
+
+            loader = get_model_loader(self.config)
+            base_model, processor = loader.load_for_inference()
+
+            model = PeftModel.from_pretrained(base_model, str(checkpoint_path))
+
+            # Unsloth fast-inference path expects the merged/wrapped model too.
+            if self.config.model.backend == "unsloth":
+                from unsloth import FastVisionModel
+                FastVisionModel.for_inference(model)
+
+            # Prefer processor from the adapter dir if it has one (it may carry
+            # tokenizer changes saved during training); fall back to loader's.
+            try:
+                processor = AutoProcessor.from_pretrained(checkpoint_path)
+            except Exception:
+                logger.info("No processor in adapter dir, keeping loader's processor.")
         else:
-            # Full model
+            # Full model checkpoint (no adapter)
             logger.info("Loading full model from checkpoint...")
-            import torch
+            processor = AutoProcessor.from_pretrained(checkpoint_path)
             model = AutoModelForImageTextToText.from_pretrained(
                 checkpoint_path,
-                torch_dtype = torch.bfloat16,
-                device_map  = "auto",
+                torch_dtype=torch.bfloat16,
+                device_map="auto",
             )
 
         model.eval()
