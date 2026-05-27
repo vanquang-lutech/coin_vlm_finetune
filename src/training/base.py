@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
+from datetime import datetime
+from pathlib import Path
 from src.utils import get_logger
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf, open_dict
 from .callbacks import GradNormCallback, MemoryCallback, GenerationMetricsCallback
 
 logger = get_logger(__name__)
@@ -12,6 +14,25 @@ class BaseTrainer(ABC):
         self.processor = processor
         self.train_loader = train_loader
         self.val_loader = val_loader
+
+        # Give every run its own folder under the configured checkpoints root so
+        # successive trainings don't overwrite each other.
+        self._resolve_run_output_dir()
+
+    def _resolve_run_output_dir(self):
+        training_cfg = self.config.training
+        base_dir = Path(training_cfg.output_dir)
+        run_name = training_cfg.get("run_name", "run") or "run"
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        run_dir = base_dir / f"{run_name}_{timestamp}"
+        run_dir.mkdir(parents=True, exist_ok=True)
+
+        if OmegaConf.is_config(training_cfg):
+            with open_dict(training_cfg):
+                training_cfg.output_dir = str(run_dir)
+        else:
+            training_cfg.output_dir = str(run_dir)
+        logger.info(f"Run output dir: {run_dir}")
 
     def train(self):
         logger.info("Starting training...")
@@ -68,25 +89,19 @@ class BaseTrainer(ABC):
             result.global_step,
             result.training_loss,
         )
-        # Save final model + processor side-by-side at the trainer output_dir
-        # so a "load latest" workflow keeps working.
-        final_dir = self.trainer.args.output_dir
-        self.trainer.save_model(final_dir)
-        self.processor.save_pretrained(final_dir)
+        # Save the processor into every remaining checkpoint dir so evaluator
+        # can load any of them standalone (weights are already there from Trainer).
+        run_dir = Path(self.trainer.args.output_dir)
+        for ckpt_dir in sorted(run_dir.glob("checkpoint-*")):
+            self.processor.save_pretrained(ckpt_dir)
+            logger.info(f"Processor saved into: {ckpt_dir}")
 
-        # Also save the processor INSIDE the best/last checkpoint folder so
-        # evaluator._load_from_checkpoint(checkpoint_path) can find it without
-        # falling back to the base model's processor.
-        try:
-            from transformers.trainer_utils import get_last_checkpoint
-            last_ckpt = get_last_checkpoint(final_dir)
-            if last_ckpt is not None:
-                self.processor.save_pretrained(last_ckpt)
-                logger.info(f"Processor also saved into checkpoint dir: {last_ckpt}")
-        except Exception as e:
-            logger.warning("Could not save processor into checkpoint dir: %s", e)
-
-        logger.info(f"Model and processor saved to {final_dir}")
+        best_ckpt = getattr(self.trainer.state, "best_model_checkpoint", None)
+        logger.info(
+            "Best checkpoint: %s | Run dir: %s",
+            best_ckpt or "(unknown)",
+            run_dir,
+        )
         return result
 
     @abstractmethod

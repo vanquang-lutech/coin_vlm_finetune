@@ -21,7 +21,7 @@ eval_strategy: "steps"
 eval_steps: 100
 save_strategy: "steps"
 save_steps: 100
-save_total_limit: 3
+save_total_limit: 2  # with load_best_model_at_end=true: keeps best + last checkpoint
 load_best_model_at_end: true
 # Pick checkpoint by mint_mark accuracy (generation-based), not eval_loss.
 # Requires generation_eval.enabled=true below so the metric is actually computed.

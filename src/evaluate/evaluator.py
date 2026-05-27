@@ -138,8 +138,6 @@ class CoinEvaluator:
         is_lora = (checkpoint_path / "adapter_config.json").exists()
 
         if is_lora:
-            # LoRA adapter: load base via configured backend loader (mirrors train),
-            # then attach the adapter weights.
             logger.info(
                 "Detected LoRA adapter. Loading base via [%s] loader + attaching adapter...",
                 self.config.model.backend.upper(),
