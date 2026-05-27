@@ -37,7 +37,7 @@
   },
   {
     "year": "2009",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_025333_860576_obverse_rotp150.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_025333_860576_obverse_rotp150.jpg"
   },
@@ -97,7 +97,7 @@
   },
   {
     "year": "2018",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_035258_329957_reverse.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_035258_329957_reverse.jpg"
   },
@@ -193,7 +193,7 @@
   },
   {
     "year": "2009",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_061458_200287_obverse_cropped.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_061458_200287_obverse_cropped.jpg"
   },
@@ -469,7 +469,7 @@
   },
   {
     "year": "2000",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_063144_979542_reverse.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_063144_979542_reverse.jpg"
   },
@@ -649,13 +649,13 @@
   },
   {
     "year": "2009",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_010703_896266_reverse_cropped_rotp45.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_010703_896266_reverse_cropped_rotp45.jpg"
   },
   {
     "year": "1982",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_100515_889183_reverse.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_100515_889183_reverse.jpg"
   },
@@ -684,13 +684,13 @@
     "image_path": "2026_04/2026_04_10/images/20260410_184443_510491_reverse_cropped_rotp82.jpg"
   },
   {
-    "year": "",
+    "year": null,
     "mint_mark": "P",
     "image_name": "20260408_021610_154702_obverse_cropped_rotm69.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_021610_154702_obverse_cropped_rotm69.jpg"
   },
   {
-    "year": "",
+    "year": null,
     "mint_mark": "D",
     "image_name": "20260408_040501_630660_obverse.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_040501_630660_obverse.jpg"
@@ -810,7 +810,7 @@
     "image_path": "2026_04/2026_04_16/images/20260416_020649_934009_obverse_cropped_rotm61.jpg"
   },
   {
-    "year": "",
+    "year": null,
     "mint_mark": "D",
     "image_name": "20260408_093957_012443_obverse_rotm142.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_093957_012443_obverse_rotm142.jpg"
@@ -871,7 +871,7 @@
   },
   {
     "year": "2021",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_021633_971218_reverse_cropped.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_021633_971218_reverse_cropped.jpg"
   },
@@ -1284,7 +1284,7 @@
     "image_path": "2026_04/2026_04_09/images/20260409_062212_198276_obverse_rotm180.jpg"
   },
   {
-    "year": "",
+    "year": null,
     "mint_mark": "D",
     "image_name": "20260408_043446_630256_obverse_rotp175.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_043446_630256_obverse_rotp175.jpg"
@@ -1339,7 +1339,7 @@
   },
   {
     "year": "1943",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_020201_910780_obverse_rotp92.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_020201_910780_obverse_rotp92.jpg"
   },
@@ -1489,7 +1489,7 @@
   },
   {
     "year": "1990",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_094207_361087_obverse_cropped_rotp37.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_094207_361087_obverse_cropped_rotp37.jpg"
   },
@@ -1525,7 +1525,7 @@
   },
   {
     "year": "1997",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_015637_242705_reverse_cropped_rotm53.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_015637_242705_reverse_cropped_rotm53.jpg"
   },
@@ -1561,7 +1561,7 @@
   },
   {
     "year": "2003",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_015001_269876_reverse.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_015001_269876_reverse.jpg"
   },
@@ -1710,7 +1710,7 @@
     "image_path": "2026_04/2026_04_18/images/20260418_230353_585376_obverse_cropped.jpg"
   },
   {
-    "year": "",
+    "year": null,
     "mint_mark": "D",
     "image_name": "20260408_030914_441625_obverse.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_030914_441625_obverse.jpg"
@@ -1765,7 +1765,7 @@
   },
   {
     "year": "1982",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_014718_329467_reverse_cropped_rotp91.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_014718_329467_reverse_cropped_rotp91.jpg"
   },
@@ -1987,7 +1987,7 @@
   },
   {
     "year": "1893",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_015746_760199_obverse_rotm136.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_015746_760199_obverse_rotm136.jpg"
   },
@@ -2113,7 +2113,7 @@
   },
   {
     "year": "1961",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_005807_934139_reverse_cropped.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_005807_934139_reverse_cropped.jpg"
   },
@@ -2161,13 +2161,13 @@
   },
   {
     "year": "1982",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_100515_889183_obverse_cropped.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_100515_889183_obverse_cropped.jpg"
   },
   {
     "year": "1982",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_014718_329467_reverse_rotp83.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_014718_329467_reverse_rotp83.jpg"
   },
@@ -2431,7 +2431,7 @@
   },
   {
     "year": "2015",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_031545_146699_obverse_rotm118.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_031545_146699_obverse_rotm118.jpg"
   },
@@ -2581,7 +2581,7 @@
   },
   {
     "year": "2008",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_053811_851010_obverse_cropped.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_053811_851010_obverse_cropped.jpg"
   },
@@ -2863,7 +2863,7 @@
   },
   {
     "year": "1967",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_012257_529234_obverse_cropped_rotp105.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_012257_529234_obverse_cropped_rotp105.jpg"
   },
@@ -3163,7 +3163,7 @@
   },
   {
     "year": "2013",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_014211_791250_reverse_cropped_rotp79.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_014211_791250_reverse_cropped_rotp79.jpg"
   },
@@ -4249,7 +4249,7 @@
   },
   {
     "year": "1969",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_030149_395421_obverse.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_030149_395421_obverse.jpg"
   },
@@ -4417,7 +4417,7 @@
   },
   {
     "year": "2009",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_061458_200287_obverse.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_061458_200287_obverse.jpg"
   },
@@ -4501,7 +4501,7 @@
   },
   {
     "year": "1981",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_011528_949078_obverse_rotp31.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_011528_949078_obverse_rotp31.jpg"
   },
@@ -4578,7 +4578,7 @@
     "image_path": "2026_04/2026_04_15/images/20260415_090936_779547_obverse_rotm30.jpg"
   },
   {
-    "year": "",
+    "year": null,
     "mint_mark": "D",
     "image_name": "20260408_030914_441625_obverse_cropped_rotm177.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_030914_441625_obverse_cropped_rotm177.jpg"
@@ -4699,7 +4699,7 @@
   },
   {
     "year": "1981",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_011528_949078_obverse_cropped.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_011528_949078_obverse_cropped.jpg"
   },
@@ -4843,7 +4843,7 @@
   },
   {
     "year": "1984",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_022405_592467_obverse_cropped.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_022405_592467_obverse_cropped.jpg"
   },
@@ -4867,7 +4867,7 @@
   },
   {
     "year": "2008",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_053811_851010_obverse_cropped_rotm40.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_053811_851010_obverse_cropped_rotm40.jpg"
   },
@@ -4921,7 +4921,7 @@
   },
   {
     "year": "1925",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_020637_854226_obverse_cropped_rotp72.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_020637_854226_obverse_cropped_rotp72.jpg"
   },
@@ -5323,7 +5323,7 @@
   },
   {
     "year": "2012",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_024104_663925_reverse.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_024104_663925_reverse.jpg"
   },
@@ -5334,7 +5334,7 @@
     "image_path": "2026_04/2026_04_15/images/20260415_120334_586890_obverse_rotm142.jpg"
   },
   {
-    "year": "",
+    "year": null,
     "mint_mark": "P",
     "image_name": "20260408_090857_042023_obverse_rotp89.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_090857_042023_obverse_rotp89.jpg"
@@ -5424,7 +5424,7 @@
     "image_path": "2026_04/2026_04_15/images/20260415_125221_735292_obverse_cropped_rotm72.jpg"
   },
   {
-    "year": "",
+    "year": null,
     "mint_mark": "D",
     "image_name": "20260408_032631_252388_obverse_cropped.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_032631_252388_obverse_cropped.jpg"
@@ -5443,7 +5443,7 @@
   },
   {
     "year": "2012",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_024104_663925_reverse_cropped_rotp57.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_024104_663925_reverse_cropped_rotp57.jpg"
   },
@@ -5731,7 +5731,7 @@
   },
   {
     "year": "2007",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_020436_016078_reverse_cropped_rotm138.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_020436_016078_reverse_cropped_rotm138.jpg"
   },
@@ -5917,7 +5917,7 @@
   },
   {
     "year": "2005",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_054850_090733_obverse_rotp177.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_054850_090733_obverse_rotp177.jpg"
   },
@@ -5988,7 +5988,7 @@
     "image_path": "2026_04/2026_04_11/images/20260411_141440_043498_obverse_cropped_rotp154.jpg"
   },
   {
-    "year": "",
+    "year": null,
     "mint_mark": "D",
     "image_name": "20260408_043446_630256_obverse_cropped.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_043446_630256_obverse_cropped.jpg"
@@ -6216,14 +6216,14 @@
     "image_path": "2026_04/2026_04_14/images/20260414_053656_397381_obverse_rotm138.jpg"
   },
   {
-    "year": "",
+    "year": null,
     "mint_mark": "D",
     "image_name": "20260408_053811_851010_reverse_rotp87.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_053811_851010_reverse_rotp87.jpg"
   },
   {
     "year": "2007",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_021812_686617_reverse.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_021812_686617_reverse.jpg"
   },
@@ -6373,7 +6373,7 @@
   },
   {
     "year": "2009",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_061458_200287_obverse_rotm82.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_061458_200287_obverse_rotm82.jpg"
   },
@@ -6648,7 +6648,7 @@
     "image_path": "2026_04/2026_04_02/images/20260402_042959_643884_obverse_cropped_rotm53.jpg"
   },
   {
-    "year": "",
+    "year": null,
     "mint_mark": "D",
     "image_name": "20260408_053811_851010_reverse_cropped_rotm81.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_053811_851010_reverse_cropped_rotm81.jpg"
@@ -6943,7 +6943,7 @@
   },
   {
     "year": "1990",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_093808_694676_obverse.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_093808_694676_obverse.jpg"
   },
@@ -7165,7 +7165,7 @@
   },
   {
     "year": "1982",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_014718_329467_reverse_rotm178.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_014718_329467_reverse_rotm178.jpg"
   },
@@ -7411,13 +7411,13 @@
   },
   {
     "year": "1990",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_093808_694676_obverse_rotp68.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_093808_694676_obverse_rotp68.jpg"
   },
   {
     "year": "1991",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_034220_845335_reverse.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_034220_845335_reverse.jpg"
   },
@@ -7453,7 +7453,7 @@
   },
   {
     "year": "1990",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_094207_361087_obverse.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_094207_361087_obverse.jpg"
   },
@@ -7789,7 +7789,7 @@
   },
   {
     "year": "2000",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_052437_395975_reverse_rotm44.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_052437_395975_reverse_rotm44.jpg"
   },
@@ -7933,7 +7933,7 @@
   },
   {
     "year": "2018",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_011651_041575_obverse.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_011651_041575_obverse.jpg"
   },
@@ -8059,7 +8059,7 @@
   },
   {
     "year": "2012",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_024104_663925_obverse_rotp169.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_024104_663925_obverse_rotp169.jpg"
   },
@@ -8371,7 +8371,7 @@
   },
   {
     "year": "2018",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_011651_041575_obverse_cropped.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_011651_041575_obverse_cropped.jpg"
   },
@@ -8473,7 +8473,7 @@
   },
   {
     "year": "2017",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_094130_957212_reverse_cropped.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_094130_957212_reverse_cropped.jpg"
   },
@@ -8503,7 +8503,7 @@
   },
   {
     "year": "1993",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_084225_278911_reverse_cropped_rotp83.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_084225_278911_reverse_cropped_rotp83.jpg"
   },
@@ -8821,7 +8821,7 @@
   },
   {
     "year": "2009",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_025333_860576_obverse_rotp111.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_025333_860576_obverse_rotp111.jpg"
   },
@@ -8995,7 +8995,7 @@
   },
   {
     "year": "1889",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_090147_850014_obverse_cropped.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_090147_850014_obverse_cropped.jpg"
   },
@@ -9234,7 +9234,7 @@
     "image_path": "2026_04/2026_04_02/images/20260402_173512_442562_obverse_cropped.jpg"
   },
   {
-    "year": "",
+    "year": null,
     "mint_mark": "D",
     "image_name": "20260408_052535_786511_reverse_rotp82.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_052535_786511_reverse_rotp82.jpg"
@@ -9259,7 +9259,7 @@
   },
   {
     "year": "2000",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_052535_786511_obverse_cropped_rotm57.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_052535_786511_obverse_cropped_rotm57.jpg"
   },
@@ -9463,7 +9463,7 @@
   },
   {
     "year": "1982",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_100515_889183_reverse_rotp175.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_100515_889183_reverse_rotp175.jpg"
   },
@@ -9661,7 +9661,7 @@
   },
   {
     "year": "2018",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_011651_041575_obverse_rotm93.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_011651_041575_obverse_rotm93.jpg"
   },
@@ -9925,7 +9925,7 @@
   },
   {
     "year": "1959",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_071001_503706_obverse_rotp120.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_071001_503706_obverse_rotp120.jpg"
   },
@@ -10393,7 +10393,7 @@
   },
   {
     "year": "2011",
-    "mint_mark": "",
+    "mint_mark": null,
     "image_name": "20260408_020825_533106_reverse_rotp133.jpg",
     "image_path": "2026_04/2026_04_08/images/20260408_020825_533106_reverse_rotp133.jpg"
   },
