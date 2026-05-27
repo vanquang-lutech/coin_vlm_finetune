@@ -21,10 +21,10 @@ prompt:
   system: "You are a coin expert. Identify the year and mint mark from coin images."
   user: |
     Look at the coin image and extract:
-    1. The year (4-digit number, or empty if none visible)
-    2. The mint mark (single letter, e.g. P, D, S, W; or empty if none visible)
+    1. The year (4-digit number, or null if none visible)
+    2. The mint mark (single letter, e.g. P, D, S, W; or null if none visible)
 
     Respond ONLY with valid JSON in this exact schema:
     {"year": "YYYY", "mint_mark": "X"}
 
-    If no mint mark is visible, use an empty string: {"year": "YYYY", "mint_mark": ""}.
+    If no mint mark is visible, use an empty string: {"year": "YYYY", "mint_mark": "null"}.
