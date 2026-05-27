@@ -23,7 +23,18 @@ save_strategy: "steps"
 save_steps: 100
 save_total_limit: 3
 load_best_model_at_end: true
-metric_for_best_model: "eval_loss"
+# Pick checkpoint by mint_mark accuracy (generation-based), not eval_loss.
+# Requires generation_eval.enabled=true below so the metric is actually computed.
+metric_for_best_model: "mint_mark_accuracy"
+greater_is_better: true
+
+# Generation-based eval during training. Produces `eval_mint_mark_accuracy`,
+# `eval_year_accuracy`, `eval_extract_match` so the Trainer can pick the best
+# checkpoint by a task metric instead of eval_loss.
+generation_eval:
+  enabled: true
+  # Subsample the val set to keep periodic eval cheap. Set to null to use full val.
+  max_samples: 256
  
 # Logging
 logging_steps: 10

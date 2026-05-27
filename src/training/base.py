@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from src.utils import get_logger
 from omegaconf import DictConfig
-from .callbacks import GradNormCallback, MemoryCallback
+from .callbacks import GradNormCallback, MemoryCallback, GenerationMetricsCallback
 
 logger = get_logger(__name__)
 
@@ -50,6 +50,7 @@ class BaseTrainer(ABC):
             save_total_limit= training_args.save_total_limit,
             load_best_model_at_end= training_args.load_best_model_at_end,
             metric_for_best_model= training_args.metric_for_best_model,
+            greater_is_better= training_args.get("greater_is_better", None),
             logging_steps= training_args.logging_steps,
             dataloader_num_workers= training_args.dataloader_num_workers,
             dataloader_pin_memory= training_args.dataloader_pin_memory,
@@ -94,6 +95,17 @@ class BaseTrainer(ABC):
     
     def _get_callbacks(self):
         callbacks = [GradNormCallback(), MemoryCallback()]
+
+        gen_eval_cfg = self.config.training.get("generation_eval", None)
+        if gen_eval_cfg is not None and gen_eval_cfg.get("enabled", False):
+            callbacks.append(
+                GenerationMetricsCallback(
+                    config=self.config,
+                    val_dataset=self.val_loader,
+                    processor=self.processor,
+                    max_samples=gen_eval_cfg.get("max_samples", None),
+                )
+            )
 
         if self.config.training.early_stopping_patience.enabled:
             from transformers import EarlyStoppingCallback

@@ -31,6 +31,7 @@ class UnslothTrainer(BaseTrainer):
             save_total_limit = training_config.save_total_limit,
             load_best_model_at_end = training_config.load_best_model_at_end,
             metric_for_best_model = training_config.metric_for_best_model,
+            greater_is_better = training_config.get("greater_is_better", None),
             logging_steps = training_config.logging_steps,
             dataloader_num_workers = training_config.dataloader_num_workers,
             dataloader_pin_memory = training_config.dataloader_pin_memory,

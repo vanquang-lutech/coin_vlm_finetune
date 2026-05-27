@@ -15,18 +15,48 @@ class CoinEvaluator:
         self.config = config
 
         if model is not None and processor is not None:
+            # Caller (e.g. training callback) owns this processor object; do NOT
+            # mutate its image_processor here or we may silently change the
+            # resolution used by the running training collator.
             self.model = model
             self.processor = processor
         elif checkpoint_path is not None:
             self.model, self.processor = self._load_from_checkpoint(checkpoint_path)
+            self._apply_processor_overrides(self.processor)
         elif load_base:
             self.model, self.processor = self._load_base_model()
+            self._apply_processor_overrides(self.processor)
         else:
             raise ValueError(
                 "Must provide either (model + processor), checkpoint_path, or load_base=True"
             )
 
         self.device = next(self.model.parameters()).device
+
+    def _apply_processor_overrides(self, processor) -> None:
+        """Ensure eval-time image resolution matches the configured processor
+        (config.processor or config.model.processor). Without this, a
+        processor loaded from an adapter/checkpoint directory may carry stale
+        min_pixels/max_pixels saved at training time, silently downsampling
+        and hurting fine-grained mint-mark recognition.
+        """
+        if processor is None:
+            return
+        processor_config = self.config.get("processor", None)
+        if processor_config is None:
+            processor_config = self.config.model.get("processor", None)
+        if processor_config is None:
+            return
+        try:
+            processor.image_processor.min_pixels = processor_config.min_pixels * 28 * 28
+            processor.image_processor.max_pixels = processor_config.max_pixels * 28 * 28
+            logger.info(
+                "Eval processor overrides applied: min_pixels=%d, max_pixels=%d",
+                processor_config.min_pixels,
+                processor_config.max_pixels,
+            )
+        except AttributeError:
+            logger.warning("Processor has no image_processor; skipping resolution override.")
 
     def evaluate(self, dataset) -> dict:
         logger.info("Running evaluation on %d samples...", len(dataset))

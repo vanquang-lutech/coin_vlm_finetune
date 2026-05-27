@@ -20,8 +20,31 @@ class CoinPredictor:
             raise ValueError(
                 "Must provide either (model + processor) or checkpoint_path"
             )
+        self._apply_processor_overrides(self.processor)
         self.device = next(self.model.parameters()).device
         self.model.eval()
+
+    def _apply_processor_overrides(self, processor) -> None:
+        """Apply config-time min/max_pixels onto a processor loaded from a
+        checkpoint dir so inference resolution matches the configured eval
+        setting (not whatever was saved at training time)."""
+        if processor is None:
+            return
+        processor_config = self.config.get("processor", None)
+        if processor_config is None:
+            processor_config = self.config.model.get("processor", None)
+        if processor_config is None:
+            return
+        try:
+            processor.image_processor.min_pixels = processor_config.min_pixels * 28 * 28
+            processor.image_processor.max_pixels = processor_config.max_pixels * 28 * 28
+            logger.info(
+                "Inference processor overrides applied: min_pixels=%d, max_pixels=%d",
+                processor_config.min_pixels,
+                processor_config.max_pixels,
+            )
+        except AttributeError:
+            logger.warning("Processor has no image_processor; skipping resolution override.")
 
     def predict(self, image):
         pil_image = self._load_image(image)

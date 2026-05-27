@@ -9,8 +9,12 @@ gradient_checkpointing: true
 max_seq_length: 2048
  
 processor:
-  min_pixels: 256
-  max_pixels: 1024
+  # Values are visual-token counts (each token = 28x28 px). Dataset images are
+  # ~100px..~1000px on the long side. min_pixels=512 forces tiny crops up to
+  # ~640x640 so the mint mark is legible; max_pixels=1280 covers the largest
+  # native image (~1000x1000) without wasting tokens above it.
+  min_pixels: 512
+  max_pixels: 1280
 
 prompt:
   system: "You are a coin expert."
