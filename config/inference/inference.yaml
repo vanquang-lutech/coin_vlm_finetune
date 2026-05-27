@@ -5,14 +5,7 @@ generation:
   repetition_penalty: 1.0
   do_sample: false
 
-# Image processor settings for eval/inference. Must match the values used at
-# training (config/model/<model>.yaml -> processor) so that visual tokens
-# resolve at the same resolution train→eval→inference. Mint mark is a small
-# detail — under-resolving here is a primary source of accuracy drop.
 processor:
-  # Keep identical to model.processor (see config/model/qwen3_vl_8b.yaml).
-  # min_pixels upsamples small dataset images so the mint mark stays legible;
-  # max_pixels matches the largest native image (~1000x1000).
   min_pixels: 512
   max_pixels: 1280
 

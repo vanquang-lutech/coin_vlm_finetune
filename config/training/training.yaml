@@ -33,7 +33,6 @@ greater_is_better: true
 # checkpoint by a task metric instead of eval_loss.
 generation_eval:
   enabled: true
-  # Subsample the val set to keep periodic eval cheap. Set to null to use full val.
   max_samples: 256
  
 # Logging
@@ -48,9 +47,6 @@ dataloader_pin_memory: true
  
 # Seed
 seed: 42
-# Bit-exact reproducibility (cudnn.deterministic=True, benchmark=False).
-# Costs ~10-30% throughput on vision; leave false unless debugging
-# divergence/reproducing a paper number.
 deterministic: false
  
 early_stopping_patience:

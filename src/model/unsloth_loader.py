@@ -12,7 +12,7 @@ class UnslothModelLoader(BaseModelLoader):
             from unsloth import FastVisionModel
         except ImportError:
             raise ImportError("Please install unsloth library to use UnslothModelLoader.")
-        
+
         model_config = self.config.model
         unsloth_name = model_config.get("unsloth_name", None)
         if not unsloth_name:
@@ -24,20 +24,27 @@ class UnslothModelLoader(BaseModelLoader):
             processor_config = self.config.model.get("processor", None)
         logger.info("Loading Unsloth model repo: %s", unsloth_name)
         model, processor = FastVisionModel.from_pretrained(
-            model_name = unsloth_name,
-            load_in_4bit = model_config.load_in_4bit,
-            use_gradient_checkpointing="unsloth",
+            unsloth_name,
+            load_in_4bit = model_config.get("load_in_4bit", False),
+            use_gradient_checkpointing = "unsloth",
         )
 
         self.processor = processor
         if processor_config is not None:
-            self.processor.image_processor.min_pixels = processor_config.min_pixels * 28 * 28
-            self.processor.image_processor.max_pixels = processor_config.max_pixels * 28 * 28
-            logger.info(
-                "Processor loaded. min_pixels: %d, max_pixels: %d",
-                self.processor.image_processor.min_pixels,
-                self.processor.image_processor.max_pixels,
-            )
+            image_processor = getattr(self.processor, "image_processor", None)
+            if image_processor is not None and hasattr(image_processor, "min_pixels"):
+                image_processor.min_pixels = processor_config.min_pixels * 28 * 28
+                image_processor.max_pixels = processor_config.max_pixels * 28 * 28
+                logger.info(
+                    "Processor loaded. min_pixels: %d, max_pixels: %d",
+                    image_processor.min_pixels,
+                    image_processor.max_pixels,
+                )
+            else:
+                logger.warning(
+                    "Processor has no image_processor.min_pixels attribute; "
+                    "skipping resolution override."
+                )
         else:
             logger.info("Processor loaded with default image processor settings.")
         return model
@@ -60,7 +67,7 @@ class UnslothModelLoader(BaseModelLoader):
         if lora_config is None:
             lora_config = self.config.model.get("lora", None)
         logger.info(
-            "Applying Unsloth QloRA Adapter (r=%d)...", lora_config.r
+            "Applying Unsloth LoRA Adapter (r=%d)...", lora_config.r
         )
         self.model = FastVisionModel.get_peft_model(
             self.model,

@@ -1,13 +1,13 @@
-name: "Qwen/Qwen3-VL-8B-Instruct"
-model_name: "Qwen/Qwen3-VL-8B-Instruct"
-unsloth_name: "/data/models/Qwen3-VL-8B-unsloth"
+name: "unsloth/Qwen3.5-4B"
+model_name: "unsloth/Qwen3.5-4B"
+unsloth_name: "unsloth/Qwen3.5-4B"
 trust_remote_code: true
 torch_dtype: "bfloat16"
 device_map: "auto"
 attn_implementation: "flash_attention_2"
 gradient_checkpointing: true
 max_seq_length: 2048
- 
+
 processor:
   min_pixels: 512
   max_pixels: 1280
