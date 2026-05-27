@@ -11,7 +11,7 @@ from .metrics import compute_metrics, parse_response
 logger = logging.getLogger(__name__)
 
 class CoinEvaluator:
-    def __init__(self, config, model, processor, checkpoint_path=None):
+    def __init__(self, config, model=None, processor=None, checkpoint_path=None, load_base=False):
         self.config = config
 
         if model is not None and processor is not None:
@@ -19,9 +19,11 @@ class CoinEvaluator:
             self.processor = processor
         elif checkpoint_path is not None:
             self.model, self.processor = self._load_from_checkpoint(checkpoint_path)
+        elif load_base:
+            self.model, self.processor = self._load_base_model()
         else:
             raise ValueError(
-                "Must provide either (model + processor) or checkpoint_path"
+                "Must provide either (model + processor), checkpoint_path, or load_base=True"
             )
 
         self.device = next(self.model.parameters()).device
@@ -79,6 +81,22 @@ class CoinEvaluator:
 
         logger.info("Results saved to: %s", output_path)
         return output_path
+
+
+    def _load_base_model(self) -> tuple:
+        from transformers import AutoProcessor, AutoModelForImageTextToText
+
+        base_model_name = self.config.model.name
+        logger.info("Loading base (un-finetuned) model: %s", base_model_name)
+
+        processor = AutoProcessor.from_pretrained(base_model_name)
+        model = AutoModelForImageTextToText.from_pretrained(
+            base_model_name,
+            torch_dtype=torch.bfloat16,
+            device_map="auto",
+        )
+        model.eval()
+        return model, processor
 
 
     def _load_from_checkpoint(self, checkpoint_path: str) -> tuple:

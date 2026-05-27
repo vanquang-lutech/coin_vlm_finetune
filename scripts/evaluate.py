@@ -27,7 +27,16 @@ def parse_args():
         default="config/inference/inference.yaml",
         help="Optional inference config to merge for generation defaults.",
     )
-    parser.add_argument("--checkpoint_path", required=True, help="Path to checkpoint.")
+    parser.add_argument(
+        "--checkpoint_path",
+        default=None,
+        help="Path to checkpoint. Omit when using --base_model.",
+    )
+    parser.add_argument(
+        "--base_model",
+        action="store_true",
+        help="Evaluate the un-finetuned base model from config.model.name (ignores --checkpoint_path).",
+    )
     parser.add_argument("--split", default="test", choices=["train", "validation", "test"])
     parser.add_argument("--output_dir", default="outputs/results/")
     parser.add_argument("--override", nargs="*", default=[], metavar="KEY=VALUE")
@@ -51,13 +60,22 @@ def main():
         deterministic=config.training.get("deterministic", False),
     )
  
+    if not args.base_model and not args.checkpoint_path:
+        raise SystemExit("Must provide --checkpoint_path or --base_model.")
+
     logger.info("Loading '%s' split...", args.split)
     dataset = CoinDataset(config, split=args.split)
- 
-    evaluator = CoinEvaluator(config, checkpoint_path=args.checkpoint_path)
+
+    if args.base_model:
+        logger.info("Evaluating BASE (un-finetuned) model: %s", config.model.name)
+        evaluator = CoinEvaluator(config, load_base=True)
+        output_dir = str(Path(args.output_dir) / "baseline")
+    else:
+        evaluator = CoinEvaluator(config, checkpoint_path=args.checkpoint_path)
+        output_dir = args.output_dir
+
     results = evaluator.evaluate(dataset)
- 
-    evaluator.save_results(results, args.output_dir)
+    evaluator.save_results(results, output_dir)
  
  
 if __name__ == "__main__":
