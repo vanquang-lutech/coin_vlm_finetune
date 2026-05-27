@@ -226,20 +226,22 @@ class CoinEvaluator:
         ]
 
     def _resolve_prompt(self):
+        """Eval mirrors inference: prefer the inference prompt
+        (config.prompt from inference.yaml), fall back to model.prompt
+        if not set. The training prompt is for updating LoRA params; at
+        eval/inference we test the model under deployment conditions.
+        """
+        inference_prompt = self.config.get("prompt", None)
+        if inference_prompt is not None:
+            return inference_prompt
+
         model_prompt = self.config.model.get("prompt", None)
         if model_prompt is not None:
+            logger.info("No inference prompt set, falling back to model.prompt.")
             return model_prompt
 
-        prompt = self.config.get("prompt", None)
-        if prompt is not None:
-            return prompt
-
-        data_prompt = self.config.data.get("prompt", None)
-        if data_prompt is not None:
-            return data_prompt
-
         raise ValueError(
-            "Prompt config not found. Set model.prompt in model config or prompt in inference/data config."
+            "Prompt not found. Set `prompt:` in inference.yaml or `model.prompt` in model config."
         )
 
     def _log_metrics(self, metrics: dict) -> None:
