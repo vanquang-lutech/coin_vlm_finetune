@@ -6,7 +6,13 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-VALID_MINT_MARKS = {"", "P", "D", "S", "W", "CC", "O", "C", "?"}
+# The 7 mint-mark labels actually present in this dataset (plus null/empty
+# for "no mint mark"). Closed-set: anything outside this is a model
+# hallucination (e.g. letters copied from "LIBERTY", "AMERICA", coin legends).
+# Note the case: "Mo" (Mexico City) is mixed-case in the data — comparison
+# is done after .upper() so any case is accepted, but this constant is the
+# canonical surface form for display/prompting.
+VALID_MINT_MARKS = {"", "D", "P", "S", "W", "O", "CC", "Mo"}
 
 
 def parse_response(response: str) -> dict | None:
@@ -47,27 +53,61 @@ def parse_response(response: str) -> dict | None:
 
     if result:
         logger.warning("JSON parse failed, used regex fallback: %s", response[:100])
-        return result
+        # Route through the same normalization as the JSON path so callers
+        # always see canonical None/str values.
+        return _extract_fields(result)
 
     logger.warning("Could not parse response: %s", response[:100])
     return None
 
 
 def _extract_fields(parsed: dict) -> dict:
-    return {
-        "year": str(parsed.get("year", "")).strip(),
-        "mint_mark": str(parsed.get("mint_mark", "")).strip().upper(),
-    }
+    """Normalize a parsed JSON object to the canonical schema.
+
+    Preserves JSON null as Python None (so the saved `parsed` field mirrors
+    the ground-truth shape, where absent mint marks are null — not the string
+    "NONE" or ""). Strings like "none"/"null"/"" are also folded to None so
+    downstream comparison is consistent regardless of how the model phrased
+    "no mint mark".
+    """
+    year_raw = parsed.get("year", None)
+    year = None if year_raw is None else str(year_raw).strip() or None
+
+    mint_raw = parsed.get("mint_mark", None)
+    if mint_raw is None:
+        mint = None
+    else:
+        mint = str(mint_raw).strip().upper()
+        if mint in {"", "NONE", "NULL"}:
+            mint = None
+
+    return {"year": year, "mint_mark": mint}
+
+def _norm_year(v) -> str:
+    """None/'' → ''. Otherwise stripped string form."""
+    if v is None:
+        return ""
+    return str(v).strip()
+
+
+def _norm_mint(v) -> str:
+    """None / '' / 'none' / 'null' / 'NONE' all collapse to '' so that gold
+    null and predicted null/none/empty are treated as equivalent.
+    """
+    if v is None:
+        return ""
+    s = str(v).strip().upper()
+    if s in {"NONE", "NULL"}:
+        return ""
+    return s
+
 
 def year_accuracy(pred: dict, gold: dict) -> bool:
-    return pred.get("year", "").strip() == str(gold.get("year", "")).strip()
+    return _norm_year(pred.get("year")) == _norm_year(gold.get("year"))
 
 
 def mint_mark_accuracy(pred: dict, gold: dict) -> bool:
-    return (
-        pred.get("mint_mark", "").strip().upper()
-        == str(gold.get("mint_mark", "")).strip().upper()
-    )
+    return _norm_mint(pred.get("mint_mark")) == _norm_mint(gold.get("mint_mark"))
 
 
 def extract_match(pred: dict, gold: dict) -> bool:
@@ -81,9 +121,17 @@ def build_confusion_matrix(
     matrix: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
     for pred, gold in zip(predictions, references):
-        gold_mint = str(gold.get("mint_mark", "")).strip().upper()
-        pred_mint = pred.get("mint_mark", "PARSE_ERROR").strip().upper() if pred else "PARSE_ERROR"
-        matrix[gold_mint][pred_mint] += 1
+        # Show empty/null as the literal label "NONE" in the matrix so the
+        # gold-null row stays readable, but use the normalized form for the
+        # bucket key so "none"/null/"" all collapse to a single cell.
+        gold_norm = _norm_mint(gold.get("mint_mark"))
+        gold_key = gold_norm if gold_norm else "NONE"
+        if pred is None:
+            pred_key = "PARSE_ERROR"
+        else:
+            pred_norm = _norm_mint(pred.get("mint_mark"))
+            pred_key = pred_norm if pred_norm else "NONE"
+        matrix[gold_key][pred_key] += 1
 
     return {k: dict(v) for k, v in matrix.items()}
 
