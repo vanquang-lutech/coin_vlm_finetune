@@ -3,7 +3,7 @@ from datetime import datetime
 from pathlib import Path
 from src.utils import get_logger
 from omegaconf import DictConfig, OmegaConf, open_dict, read_write
-from .callbacks import GradNormCallback, MemoryCallback, GenerationMetricsCallback
+from .callbacks import GradNormCallback, MemoryCallback
 
 logger = get_logger(__name__)
 
@@ -38,10 +38,115 @@ class BaseTrainer(ABC):
         logger.info("Starting training...")
         args = self._build_args()
         self.trainer = self._build_trainer(args)
+        self._maybe_wrap_evaluate_with_generation()
 
         logger.info("Starting training with args: %s", args)
         result = self._run_training()
         return result
+
+    def _maybe_wrap_evaluate_with_generation(self):
+        """Monkey-patch trainer.evaluate to also run generation-based eval and
+        inject extract_match/year_accuracy/mint_mark_accuracy into the metrics
+        dict that HF Trainer reads for `metric_for_best_model`.
+
+        Why not a TrainerCallback? In Unsloth's compiled SFTTrainer the
+        callback dispatch around evaluate() runs AFTER `_determine_best_metric`,
+        so adding the metric from `on_evaluate` is too late and HF raises
+        KeyError on `eval_extract_match`. Overriding evaluate() at the trainer
+        instance guarantees the keys are present before HF reads them.
+        """
+        gen_eval_cfg = self.config.training.get("generation_eval", None)
+        if gen_eval_cfg is None or not gen_eval_cfg.get("enabled", False):
+            return
+
+        max_samples = gen_eval_cfg.get("max_samples", None)
+        trainer = self.trainer
+        config = self.config
+        val_dataset = self.val_loader
+        processor = self.processor
+        original_evaluate = trainer.evaluate
+
+        def evaluate(eval_dataset=None, ignore_keys=None, metric_key_prefix="eval"):
+            metrics = original_evaluate(
+                eval_dataset=eval_dataset,
+                ignore_keys=ignore_keys,
+                metric_key_prefix=metric_key_prefix,
+            )
+            # Only run generation eval for the standard "eval" pass; skip
+            # ad-hoc evaluate() calls with custom prefixes.
+            if metric_key_prefix != "eval":
+                return metrics
+
+            from torch.utils.data import Subset
+            from src.evaluate.evaluator import CoinEvaluator
+
+            ds = val_dataset
+            if max_samples is not None and len(ds) > max_samples:
+                stride = max(1, len(ds) // max_samples)
+                indices = list(range(0, len(ds), stride))[:max_samples]
+                ds = Subset(ds, indices)
+
+            model = trainer.model
+            was_training = model.training
+            try:
+                try:
+                    from unsloth import FastVisionModel
+                    FastVisionModel.for_inference(model)
+                except Exception:
+                    pass
+
+                evaluator = CoinEvaluator(config, model=model, processor=processor)
+                gen_results = evaluator.evaluate(ds)
+                gen = gen_results["metrics"]
+            except Exception as e:
+                # Never let generation eval crash the training loop. Log loudly
+                # and return the eval_loss-only metrics; HF will fall back to
+                # warning about the missing best-model metric but training
+                # continues.
+                logger.exception("Generation eval failed at step %d: %s",
+                                 trainer.state.global_step, e)
+                return metrics
+            finally:
+                try:
+                    from unsloth import FastVisionModel
+                    FastVisionModel.for_training(model)
+                except Exception:
+                    pass
+                if was_training:
+                    model.train()
+
+            metrics["eval_extract_match"] = gen["extract_match"]
+            metrics["eval_mint_mark_accuracy"] = gen["mint_mark_accuracy"]
+            metrics["eval_year_accuracy"] = gen["year_accuracy"]
+            metrics["eval_parse_error_rate"] = gen["parse_error_rate"]
+
+            logger.info(
+                "[GenEval @ step %d on %d samples] exact=%.4f | year=%.4f | mint=%.4f | parse_err=%.4f",
+                trainer.state.global_step,
+                len(ds),
+                gen["extract_match"],
+                gen["year_accuracy"],
+                gen["mint_mark_accuracy"],
+                gen["parse_error_rate"],
+            )
+
+            try:
+                trainer.log({
+                    "eval_extract_match": gen["extract_match"],
+                    "eval_mint_mark_accuracy": gen["mint_mark_accuracy"],
+                    "eval_year_accuracy": gen["year_accuracy"],
+                    "eval_parse_error_rate": gen["parse_error_rate"],
+                })
+            except Exception:
+                pass
+
+            return metrics
+
+        trainer.evaluate = evaluate
+        logger.info(
+            "Patched trainer.evaluate to add generation metrics (max_samples=%s).",
+            max_samples,
+        )
     
     def get_model(self):
         if self.trainer is None:
@@ -109,18 +214,11 @@ class BaseTrainer(ABC):
         pass
     
     def _get_callbacks(self):
+        # Note: generation-based eval is now injected by overriding
+        # trainer.evaluate (see _maybe_wrap_evaluate_with_generation) instead
+        # of via a TrainerCallback — callbacks fire too late under Unsloth's
+        # SFTTrainer wrapper for `metric_for_best_model` to pick them up.
         callbacks = [GradNormCallback(), MemoryCallback()]
-
-        gen_eval_cfg = self.config.training.get("generation_eval", None)
-        if gen_eval_cfg is not None and gen_eval_cfg.get("enabled", False):
-            callbacks.append(
-                GenerationMetricsCallback(
-                    config=self.config,
-                    val_dataset=self.val_loader,
-                    processor=self.processor,
-                    max_samples=gen_eval_cfg.get("max_samples", None),
-                )
-            )
 
         if self.config.training.early_stopping_patience.enabled:
             from transformers import EarlyStoppingCallback
