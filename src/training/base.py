@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
 from src.utils import get_logger
-from omegaconf import DictConfig, OmegaConf, open_dict
+from omegaconf import DictConfig, OmegaConf, open_dict, read_write
 from .callbacks import GradNormCallback, MemoryCallback, GenerationMetricsCallback
 
 logger = get_logger(__name__)
@@ -28,7 +28,7 @@ class BaseTrainer(ABC):
         run_dir.mkdir(parents=True, exist_ok=True)
 
         if OmegaConf.is_config(training_cfg):
-            with open_dict(training_cfg):
+            with read_write(training_cfg), open_dict(training_cfg):
                 training_cfg.output_dir = str(run_dir)
         else:
             training_cfg.output_dir = str(run_dir)
