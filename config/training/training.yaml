@@ -23,9 +23,13 @@ save_strategy: "steps"
 save_steps: 100
 save_total_limit: 2  # with load_best_model_at_end=true: keeps best + last checkpoint
 load_best_model_at_end: true
-# Pick checkpoint by mint_mark accuracy (generation-based), not eval_loss.
+# Pick checkpoint by extract_match (both year AND mint_mark correct).
+# This is the production-aligned metric — eval_loss is dominated by JSON
+# structural tokens (`{`, `"`, `:`...) so it can drop while real accuracy
+# stagnates. Targeting only mint_mark_accuracy risks the model trading year
+# quality for mint quality. extract_match catches regression in either field.
 # Requires generation_eval.enabled=true below so the metric is actually computed.
-metric_for_best_model: "mint_mark_accuracy"
+metric_for_best_model: "extract_match"
 greater_is_better: true
 
 # Generation-based eval during training. Produces `eval_mint_mark_accuracy`,
@@ -33,7 +37,11 @@ greater_is_better: true
 # checkpoint by a task metric instead of eval_loss.
 generation_eval:
   enabled: true
-  max_samples: 256
+  # Larger subsample reduces boolean-metric noise. ~512 samples gives
+  # ~±2% sampling error on extract_match — small enough that early stopping
+  # threshold of 0.005 is meaningful. Trade-off: each eval step is ~2x slower
+  # than 256 samples.
+  max_samples: 512
  
 # Logging
 logging_steps: 10
@@ -51,5 +59,9 @@ deterministic: false
  
 early_stopping_patience:
   enabled: true
+  # Patience: number of evals without `threshold`-improvement before stop.
+  # With boolean metric on 512-sample subsample (~±2% noise), threshold=0.001
+  # is below noise floor — it would stop on random fluctuation. 0.005 (0.5pp)
+  # is the smallest improvement we can trust. Patience 5 evals = 500 steps.
   patience: 5
-  threshold: 0.001
+  threshold: 0.005
