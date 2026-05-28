@@ -36,12 +36,19 @@ class CoinPredictor:
         if processor_config is None:
             return
         try:
-            processor.image_processor.min_pixels = processor_config.min_pixels * 28 * 28
-            processor.image_processor.max_pixels = processor_config.max_pixels * 28 * 28
+            patch_size = processor.image_processor.patch_size
+            merge_size = getattr(processor.image_processor, "merge_size", 1) or 1
+            token_px = patch_size * merge_size
+            processor.image_processor.min_pixels = processor_config.min_pixels * token_px * token_px
+            processor.image_processor.max_pixels = processor_config.max_pixels * token_px * token_px
             logger.info(
-                "Inference processor overrides applied: min_pixels=%d, max_pixels=%d",
+                "Inference processor overrides applied: min_pixels=%d tokens, max_pixels=%d tokens "
+                "(token_px=%dx%d → %d/%d raw pixels)",
                 processor_config.min_pixels,
                 processor_config.max_pixels,
+                token_px, token_px,
+                processor.image_processor.min_pixels,
+                processor.image_processor.max_pixels,
             )
         except AttributeError:
             logger.warning("Processor has no image_processor; skipping resolution override.")
