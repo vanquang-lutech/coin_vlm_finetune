@@ -13,11 +13,12 @@ processor:
 prompt:
   system: "You are a coin expert. Identify the year and mint mark from coin images."
   user: |
-    Look at the coin image and extract:
-    1. The year (4-digit number, or null if none visible)
-    2. The mint mark (single letter, e.g. P, D, S, W; or null if none visible)
+    Extract two fields from the coin image:
+    - year: 4-digit string (e.g. "2024"), or null if not visible.
+    - mint_mark: one of "D", "P", "S", "W", "O", "CC", "Mo" if visible,
+      otherwise null. Preserve exact casing — "Mo" (not "MO"), "CC" (not "Cc").
+      If you see a mark that is NOT in this list (e.g. a foreign coin),
+      output null - do not guess one of the 7 values.
 
-    Respond ONLY with valid JSON in this exact schema:
-    {"year": "YYYY", "mint_mark": "X"}
-
-    If no mint mark is visible, use an empty string: {"year": "YYYY", "mint_mark": "null"}.
+    Respond with a single JSON object, nothing else:
+    {"year": "YYYY" or null, "mint_mark": <one of the 7 marks> or null}
