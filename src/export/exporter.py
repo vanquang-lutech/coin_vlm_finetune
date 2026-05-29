@@ -128,6 +128,22 @@ def _merge_hf(base_model: str, adapter_path: Path, output_dir: Path) -> None:
 
     logger.info("Merging adapter into base model (16-bit)...")
     model = model.merge_and_unload()
+
+    # After dequantize() the model is plain bf16, but the config may still carry
+    # the bnb `quantization_config` (whose bnb_4bit_compute_dtype is a torch.dtype
+    # object that is not JSON-serializable, breaking save_pretrained). Strip the
+    # quantization metadata so the saved config reflects a clean 16-bit model.
+    for cfg in (model.config, getattr(model.config, "text_config", None)):
+        if cfg is None:
+            continue
+        for attr in ("quantization_config", "_pre_quantization_dtype"):
+            if hasattr(cfg, attr):
+                try:
+                    delattr(cfg, attr)
+                except Exception:
+                    setattr(cfg, attr, None)
+    model.config.torch_dtype = "bfloat16"
+
     model.save_pretrained(str(output_dir), safe_serialization=True)
     _save_processor(adapter_path, output_dir, base_model=base_model)
 
