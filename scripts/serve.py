@@ -15,6 +15,7 @@ Example:
 """
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -27,6 +28,60 @@ from src.serving import create_app
 from src.utils import ConfigLoader, setup_logging, get_logger
 
 logger = get_logger(__name__)
+
+
+def start_ngrok(config, port: int):
+    """Open an ngrok tunnel to the local port using the reserved domain, so the
+    API on the A100 box is publicly reachable for testing. Returns the tunnel
+    (or None if disabled). Failures are logged but do NOT stop the server."""
+    ng = config.serving.get("ngrok", None)
+    if not ng or not ng.get("enabled", False):
+        return None
+
+    try:
+        from pyngrok import ngrok
+    except ImportError:
+        logger.error(
+            "ngrok.enabled=true but pyngrok is not installed. "
+            "Run `pip install pyngrok` or set serving.ngrok.enabled=false."
+        )
+        return None
+
+    token = os.getenv("NGROK_AUTHTOKEN") or ng.get("authtoken", None)
+    domain = ng.get("domain", None)
+    if domain and not token:
+        logger.error(
+            "ngrok reserved domain '%s' requires an authtoken. "
+            "Set NGROK_AUTHTOKEN env var (or serving.ngrok.authtoken). "
+            "Continuing WITHOUT a tunnel.",
+            domain,
+        )
+        return None
+
+    try:
+        if token:
+            ngrok.set_auth_token(token)
+        connect_kwargs = {"addr": str(port), "proto": "http"}
+        if domain:
+            connect_kwargs["domain"] = domain
+        tunnel = ngrok.connect(**connect_kwargs)
+        logger.info("ngrok tunnel up: %s -> http://localhost:%d", tunnel.public_url, port)
+        return tunnel
+    except Exception:  # noqa: BLE001 - tunnel is best-effort, never fatal
+        logger.exception("Failed to start ngrok tunnel; continuing without it.")
+        return None
+
+
+def stop_ngrok(tunnel) -> None:
+    if tunnel is None:
+        return
+    try:
+        from pyngrok import ngrok
+        ngrok.disconnect(tunnel.public_url)
+        ngrok.kill()
+        logger.info("ngrok tunnel closed.")
+    except Exception:  # noqa: BLE001
+        logger.warning("Failed to cleanly close ngrok tunnel.")
 
 
 def parse_args():
@@ -91,7 +146,11 @@ def main():
     port = int(config.serving.get("port", 8000))
     logger.info("Serving on http://%s:%d (model=%s)", host, port, config.serving.model_path)
 
-    uvicorn.run(app, host=host, port=port, log_level=args.log_level.lower())
+    tunnel = start_ngrok(config, port)
+    try:
+        uvicorn.run(app, host=host, port=port, log_level=args.log_level.lower())
+    finally:
+        stop_ngrok(tunnel)
 
 
 if __name__ == "__main__":

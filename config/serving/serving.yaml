@@ -7,11 +7,17 @@
 serving:
   # Path to the standalone checkpoint vLLM should load. Use the AWQ output for a
   # quantized model, or the plain merged dir for full bf16.
-  model_path: "outputs/merged_models/coin-vlm-awq"
+  model_path: "/data/coin/coin_vlm_finetune/data/models/Qwen3-VL-8B-coin-awq"
 
-  # Quantization method vLLM applies at load time. Set to "awq" for an AWQ
-  # W4A16 export, or null/"" for a plain merged bf16 checkpoint.
-  quantization: "awq"
+  # Quantization method vLLM applies at load time.
+  #   null  -> vLLM auto-detects from the checkpoint's config.json
+  #            (quantization_config.quant_method). RECOMMENDED: the project's
+  #            export_awq uses llmcompressor, which saves "compressed-tensors"
+  #            (W4A16) — NOT classic AutoAWQ. Forcing "awq" would pick the wrong
+  #            loader and fail.
+  #   "compressed-tensors" -> force the llmcompressor format explicitly.
+  #   "awq" -> only for an AutoAWQ-format export.
+  quantization: null
 
   # vLLM engine args.
   dtype: "auto"                 # auto picks bf16/fp16 from the checkpoint
@@ -38,9 +44,22 @@ serving:
     contrast_threshold: 50.0
     sharpness_threshold: 600.0
 
-  # HTTP server.
+  # HTTP server. Shared multi-user box -> avoid the crowded default 8000.
+  # Picked from the IANA dynamic/private range (49152-65535), which apps rarely
+  # grab. Override per-run if needed: --override serving.port=49710
   host: "0.0.0.0"
-  port: 8000
+  port: 49710
+
+  # ngrok: expose the local port through a public URL so the API on the A100 box
+  # is reachable from outside for testing. Uses the reserved (static) domain
+  # below, so the URL stays stable across restarts.
+  # Auth: a reserved domain REQUIRES an ngrok authtoken. Set it via the
+  # NGROK_AUTHTOKEN env var (preferred) or `authtoken:` here.
+  #   export NGROK_AUTHTOKEN=xxxxx
+  ngrok:
+    enabled: true
+    domain: "embezzle-eastcoast-armoire.ngrok-free.dev"
+    authtoken: null   # falls back to $NGROK_AUTHTOKEN
 
   # Logging. Files are date-partitioned under `log_dir` and roll over on a new
   # day/month automatically (log_rotation: daily | monthly). Layout for daily:
