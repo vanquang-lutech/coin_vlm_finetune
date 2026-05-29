@@ -81,6 +81,29 @@ def _save_processor(adapter_path: Path, output_dir: Path, base_model: str | None
                        "merged dir may be missing tokenizer/processor files.")
 
 
+def _sanitize_config_for_json(cfg) -> None:
+    """Recursively make a (possibly composite) HF config JSON-serializable after
+    dequantization: drop bnb quantization metadata and convert any leftover
+    torch.dtype attributes (e.g. `dtype`, `_pre_quantization_dtype`) to strings.
+    Nested sub-configs (text_config, vision_config, ...) are handled too."""
+    import torch
+
+    if cfg is None:
+        return
+    for attr in ("quantization_config", "_pre_quantization_dtype"):
+        if hasattr(cfg, attr):
+            try:
+                delattr(cfg, attr)
+            except Exception:
+                setattr(cfg, attr, None)
+
+    for key, val in list(vars(cfg).items()):
+        if isinstance(val, torch.dtype):
+            setattr(cfg, key, str(val).split(".")[-1])  # torch.bfloat16 -> "bfloat16"
+        elif val.__class__.__name__.endswith("Config") and hasattr(val, "to_dict"):
+            _sanitize_config_for_json(val)
+
+
 def _merge_hf(base_model: str, adapter_path: Path, output_dir: Path) -> None:
     """Merge with plain transformers + peft. Loads the base at bf16 from its
     LOCAL path, attaches the adapter onto that already-loaded model (so the
@@ -129,20 +152,11 @@ def _merge_hf(base_model: str, adapter_path: Path, output_dir: Path) -> None:
     logger.info("Merging adapter into base model (16-bit)...")
     model = model.merge_and_unload()
 
-    # After dequantize() the model is plain bf16, but the config may still carry
-    # the bnb `quantization_config` (whose bnb_4bit_compute_dtype is a torch.dtype
-    # object that is not JSON-serializable, breaking save_pretrained). Strip the
-    # quantization metadata so the saved config reflects a clean 16-bit model.
-    for cfg in (model.config, getattr(model.config, "text_config", None)):
-        if cfg is None:
-            continue
-        for attr in ("quantization_config", "_pre_quantization_dtype"):
-            if hasattr(cfg, attr):
-                try:
-                    delattr(cfg, attr)
-                except Exception:
-                    setattr(cfg, attr, None)
-    model.config.torch_dtype = "bfloat16"
+    # After dequantize() the model is plain bf16, but the config still carries
+    # bnb quantization metadata and raw torch.dtype objects that are not
+    # JSON-serializable (breaking save_pretrained). Sanitize the whole config
+    # tree so the saved config reflects a clean 16-bit model.
+    _sanitize_config_for_json(model.config)
 
     model.save_pretrained(str(output_dir), safe_serialization=True)
     _save_processor(adapter_path, output_dir, base_model=base_model)
