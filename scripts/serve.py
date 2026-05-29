@@ -58,17 +58,32 @@ def start_ngrok(config, port: int):
         )
         return None
 
+    # Use a pre-installed ngrok binary if provided, so pyngrok does NOT try to
+    # download it (the A100 box may not reach bin.ngrok.com).
+    binary_path = os.getenv("NGROK_PATH") or ng.get("binary_path", None)
+    pyngrok_config = None
+    if binary_path:
+        from pyngrok.conf import PyngrokConfig
+        pyngrok_config = PyngrokConfig(ngrok_path=binary_path)
+        logger.info("Using ngrok binary at: %s", binary_path)
+
     try:
         if token:
-            ngrok.set_auth_token(token)
+            ngrok.set_auth_token(token, pyngrok_config=pyngrok_config)
         connect_kwargs = {"addr": str(port), "proto": "http"}
         if domain:
             connect_kwargs["domain"] = domain
+        if pyngrok_config is not None:
+            connect_kwargs["pyngrok_config"] = pyngrok_config
         tunnel = ngrok.connect(**connect_kwargs)
         logger.info("ngrok tunnel up: %s -> http://localhost:%d", tunnel.public_url, port)
         return tunnel
     except Exception:  # noqa: BLE001 - tunnel is best-effort, never fatal
-        logger.exception("Failed to start ngrok tunnel; continuing without it.")
+        logger.exception(
+            "Failed to start ngrok tunnel; continuing without it. "
+            "If this is a download error, install the ngrok binary manually and "
+            "set NGROK_PATH (or serving.ngrok.binary_path)."
+        )
         return None
 
 
@@ -148,7 +163,13 @@ def main():
 
     tunnel = start_ngrok(config, port)
     try:
-        uvicorn.run(app, host=host, port=port, log_level=args.log_level.lower())
+        # log_config=None: keep OUR logging setup. uvicorn's default logging
+        # config runs dictConfig() which would close our file handler's stream.
+        uvicorn.run(
+            app, host=host, port=port,
+            log_level=args.log_level.lower(),
+            log_config=None,
+        )
     finally:
         stop_ngrok(tunnel)
 

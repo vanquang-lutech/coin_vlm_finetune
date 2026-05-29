@@ -57,8 +57,13 @@ class DatedFileHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
-            if _date_key(self.rotation) != self._key:
-                self._stream.close()
+            # Reopen when the calendar bucket changed, OR when the stream was
+            # closed out from under us (uvicorn's dictConfig closes existing
+            # handlers on startup, but this handler stays attached to root).
+            stream_dead = self._stream is None or self._stream.closed
+            if stream_dead or _date_key(self.rotation) != self._key:
+                if self._stream is not None and not self._stream.closed:
+                    self._stream.close()
                 self._open()
             self._stream.write(self.format(record) + "\n")
             self._stream.flush()
