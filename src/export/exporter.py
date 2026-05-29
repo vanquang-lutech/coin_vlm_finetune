@@ -59,79 +59,77 @@ def _resolve_base_model(config, adapter_path: Path, override: str | None) -> str
     )
 
 
-def _save_processor(adapter_path: Path, output_dir: Path, fallback=None) -> None:
+def _save_processor(adapter_path: Path, output_dir: Path, base_model: str | None = None) -> None:
     """Ensure the merged dir carries the processor (image processor + tokenizer
-    + chat template) so vLLM can serve multimodal requests."""
+    + chat template) so vLLM can serve multimodal requests. Prefer the adapter
+    checkpoint (carries the trained tokenizer/template), fall back to the base."""
     from transformers import AutoProcessor
 
-    try:
-        proc = AutoProcessor.from_pretrained(str(adapter_path))
-    except Exception:
-        proc = fallback
+    proc = None
+    for src in (str(adapter_path), base_model):
+        if not src:
+            continue
+        try:
+            proc = AutoProcessor.from_pretrained(src, trust_remote_code=True, local_files_only=True)
+            break
+        except Exception:
+            continue
     if proc is not None:
         proc.save_pretrained(str(output_dir))
-
-
-def _merge_unsloth(base_model: str, adapter_path: Path, output_dir: Path) -> None:
-    # The base lives locally; force offline so Unsloth's telemetry/statistics
-    # call to HuggingFace fails fast instead of hanging 120s when HF is
-    # unreachable (which otherwise aborts the whole merge).
-    os.environ.setdefault("HF_HUB_OFFLINE", "1")
-    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
-    os.environ.setdefault("UNSLOTH_DISABLE_STATISTICS", "1")
-
-    from unsloth import FastVisionModel
-
-    # Load the BASE via Unsloth (so the model keeps Unsloth's
-    # `save_pretrained_merged`), then attach the trained adapter IN PLACE with
-    # load_adapter. We do NOT load straight from the adapter folder because its
-    # adapter_config bakes in the stale training-time base path; and we do NOT
-    # wrap with a vanilla PeftModel because that drops save_pretrained_merged
-    # (forcing a fallback that saves a 4-bit checkpoint).
-    logger.info("Loading base '%s' via Unsloth...", base_model)
-    model, processor = FastVisionModel.from_pretrained(
-        base_model,
-        load_in_4bit=False,          # request 16-bit; merged_16bit also dequantizes
-        use_gradient_checkpointing=False,
-        local_files_only=True,
-    )
-
-    if not hasattr(model, "save_pretrained_merged"):
-        raise RuntimeError(
-            "Unsloth model has no save_pretrained_merged(); cannot guarantee a "
-            "16-bit merge. Check the Unsloth version."
-        )
-
-    logger.info("Attaching LoRA adapter from '%s' (in place)...", adapter_path)
-    model.load_adapter(str(adapter_path))
-
-    logger.info("Merging + dequantizing to 16-bit (save_method='merged_16bit')...")
-    model.save_pretrained_merged(
-        str(output_dir),
-        processor,
-        save_method="merged_16bit",
-    )
+    else:
+        logger.warning("Could not load a processor from adapter or base; "
+                       "merged dir may be missing tokenizer/processor files.")
 
 
 def _merge_hf(base_model: str, adapter_path: Path, output_dir: Path) -> None:
+    """Merge with plain transformers + peft. Loads the base at bf16 from its
+    LOCAL path, attaches the adapter onto that already-loaded model (so the
+    stale base path inside adapter_config is irrelevant), merges, and saves a
+    standalone 16-bit checkpoint. This is the reliable path: Unsloth's
+    save_pretrained_merged did not actually merge on the installed version."""
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+
     import torch
     from transformers import AutoModelForImageTextToText
     from peft import PeftModel
 
-    logger.info("Loading base '%s' at bf16 via transformers...", base_model)
-    model = AutoModelForImageTextToText.from_pretrained(
-        base_model,
-        torch_dtype=torch.bfloat16,
-        device_map="auto",
-    )
+    # The base may be a bnb 4-bit (NF4) checkpoint — that is what QLoRA trained
+    # on. You cannot merge a LoRA into 4-bit weights, so if the base is
+    # quantized we load it 4-bit and dequantize back to bf16 first. Since the
+    # adapter was trained against exactly these NF4 weights, dequantizing and
+    # merging is the faithful reconstruction of (base + adapter).
+    base_cfg = Path(base_model) / "config.json"
+    is_quantized = False
+    if base_cfg.exists():
+        is_quantized = bool(json.loads(base_cfg.read_text()).get("quantization_config"))
+
+    if is_quantized:
+        logger.info("Base '%s' is bnb-quantized; loading 4-bit then dequantizing to bf16...", base_model)
+        model = AutoModelForImageTextToText.from_pretrained(
+            base_model,
+            device_map="auto",
+            local_files_only=True,
+            trust_remote_code=True,
+        )
+        model = model.dequantize()      # Linear4bit -> bf16 Linear, drops quantization_config
+    else:
+        logger.info("Loading base '%s' at bf16 via transformers (local, offline)...", base_model)
+        model = AutoModelForImageTextToText.from_pretrained(
+            base_model,
+            dtype=torch.bfloat16,
+            device_map="auto",
+            local_files_only=True,
+            trust_remote_code=True,
+        )
 
     logger.info("Applying LoRA adapter from '%s'...", adapter_path)
-    model = PeftModel.from_pretrained(model, str(adapter_path))
+    model = PeftModel.from_pretrained(model, str(adapter_path), local_files_only=True)
 
-    logger.info("Merging adapter into base model...")
+    logger.info("Merging adapter into base model (16-bit)...")
     model = model.merge_and_unload()
     model.save_pretrained(str(output_dir), safe_serialization=True)
-    _save_processor(adapter_path, output_dir)
+    _save_processor(adapter_path, output_dir, base_model=base_model)
 
 
 def merge_lora(config, adapter_path: str, output_dir: str, base_model: str | None = None) -> None:
@@ -148,12 +146,12 @@ def merge_lora(config, adapter_path: str, output_dir: str, base_model: str | Non
         )
 
     base_model = _resolve_base_model(config, adapter_path, base_model)
-    backend = config.model.get("backend", None)
 
-    if backend == "unsloth":
-        _merge_unsloth(base_model, adapter_path, output_dir)
-    else:
-        _merge_hf(base_model, adapter_path, output_dir)
+    # Always use the transformers + peft merge. It produces a clean 16-bit
+    # checkpoint regardless of training backend; Unsloth's save_pretrained_merged
+    # did not actually merge (it re-saved only the adapter) on the installed
+    # version, so it is no longer used here.
+    _merge_hf(base_model, adapter_path, output_dir)
 
     logger.info("Merge complete. Merged model saved to: %s", output_dir)
     logger.info(
