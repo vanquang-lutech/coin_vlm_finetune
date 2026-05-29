@@ -63,32 +63,33 @@ def _merge_unsloth(base_model: str, adapter_path: Path, output_dir: Path) -> Non
     os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
     os.environ.setdefault("UNSLOTH_DISABLE_STATISTICS", "1")
 
-    from peft import PeftModel
     from unsloth import FastVisionModel
 
-    logger.info("Loading base '%s' at 16-bit via Unsloth (load_in_4bit=False)...", base_model)
+    # Load DIRECTLY from the adapter checkpoint (not base + raw PeftModel): this
+    # lets Unsloth resolve the base, apply the adapter, AND attach its
+    # `save_pretrained_merged` method. A vanilla PeftModel does NOT have that
+    # method, so the old fallback path would merge into the (still 4-bit) base
+    # and save a 4-bit checkpoint — unusable for AWQ / vLLM.
+    logger.info("Loading adapter checkpoint via Unsloth (base resolved from adapter_config)...")
     model, processor = FastVisionModel.from_pretrained(
-        base_model,
-        load_in_4bit=False,          # CRITICAL: dequantize to bf16 before merging
+        str(adapter_path),
+        load_in_4bit=False,          # request 16-bit; merged_16bit also dequantizes
         use_gradient_checkpointing=False,
-        local_files_only=True,       # base is a local dir; skip any HF lookup
+        local_files_only=True,
     )
 
-    logger.info("Applying LoRA adapter from '%s'...", adapter_path)
-    model = PeftModel.from_pretrained(model, str(adapter_path))
-
-    logger.info("Merging adapter into base weights (16-bit)...")
-    if hasattr(model, "save_pretrained_merged"):
-        # Unsloth's merged save also writes a vLLM-friendly processor layout.
-        model.save_pretrained_merged(
-            str(output_dir),
-            processor,
-            save_method="merged_16bit",
+    if not hasattr(model, "save_pretrained_merged"):
+        raise RuntimeError(
+            "Unsloth model has no save_pretrained_merged(); cannot guarantee a "
+            "16-bit merge. Check the Unsloth version."
         )
-    else:
-        merged = model.merge_and_unload()
-        merged.save_pretrained(str(output_dir), safe_serialization=True)
-        _save_processor(adapter_path, output_dir, fallback=processor)
+
+    logger.info("Merging + dequantizing to 16-bit (save_method='merged_16bit')...")
+    model.save_pretrained_merged(
+        str(output_dir),
+        processor,
+        save_method="merged_16bit",
+    )
 
 
 def _merge_hf(base_model: str, adapter_path: Path, output_dir: Path) -> None:
