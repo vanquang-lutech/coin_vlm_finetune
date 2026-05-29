@@ -262,9 +262,11 @@ def export_awq(
     processor = AutoProcessor.from_pretrained(
         str(model_path), trust_remote_code=True, local_files_only=True,
     )
+    # Force bf16: Qwen3-VL is bf16-native and AWQ smoothing overflows in fp16
+    # ("No finite loss / NaN in forward pass"). Do NOT rely on config dtype.
     model = AutoModelForImageTextToText.from_pretrained(
         str(model_path),
-        dtype="auto",
+        dtype=torch.bfloat16,
         device_map="auto",
         trust_remote_code=True,
         local_files_only=True,
