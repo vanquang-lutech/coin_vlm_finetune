@@ -98,7 +98,12 @@ def _sanitize_config_for_json(cfg) -> None:
                 setattr(cfg, attr, None)
 
     for key, val in list(vars(cfg).items()):
-        if isinstance(val, torch.dtype):
+        if key in ("dtype", "torch_dtype"):
+            # We dequantized to bf16; force bf16 so the config matches the actual
+            # weights (the bnb base often advertised float16, which would make
+            # vLLM serve this bf16-native model in fp16).
+            setattr(cfg, key, "bfloat16")
+        elif isinstance(val, torch.dtype):
             setattr(cfg, key, str(val).split(".")[-1])  # torch.bfloat16 -> "bfloat16"
         elif val.__class__.__name__.endswith("Config") and hasattr(val, "to_dict"):
             _sanitize_config_for_json(val)
@@ -191,20 +196,36 @@ def merge_lora(config, adapter_path: str, output_dir: str, base_model: str | Non
     )
 
 
-class _CalibrationCollator:
-    """Wrap CoinDataCollator for AWQ calibration: same prompt/image pipeline as
-    training, but drop the `labels` key (calibration only needs forward-pass
-    activations, not a loss)."""
+def _build_awq_calibration_dataset(config, processor, num_samples: int, split: str):
+    """Build a HuggingFace Dataset of already-processed multimodal inputs for
+    AWQ calibration. llmcompressor expects a HF Dataset (with column_names),
+    not a torch Dataset, and for vision models the rows must already be
+    tokenized (input_ids, attention_mask, pixel_values, image_grid_thw, ...).
 
-    def __init__(self, processor, config):
-        from src.data import CoinDataCollator
+    We reuse CoinDataCollator only to build the SAME prompt/messages as training,
+    then run the processor per sample and store the tensors as nested lists. A
+    batch-size-1 data_collator reconstructs the tensors at calibration time.
+    """
+    from datasets import Dataset as HFDataset
 
-        self._inner = CoinDataCollator(processor, config)
+    from src.data import CoinDataset, CoinDataCollator
 
-    def __call__(self, batch):
-        out = self._inner(batch)
-        out.pop("labels", None)
-        return out
+    coin = CoinDataset(config, split=split)
+    msg_builder = CoinDataCollator(processor, config)  # for _build_messages only
+    n = min(num_samples, len(coin))
+
+    rows = []
+    for i in range(n):
+        item = coin[i]
+        messages = msg_builder._build_messages(item["label"])
+        text = processor.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=False, enable_thinking=False,
+        )
+        inputs = processor(text=[text], images=[item["image"]], return_tensors="pt")
+        rows.append({k: v.tolist() for k, v in inputs.items()})
+
+    logger.info("Built %d calibration samples for AWQ.", len(rows))
+    return HFDataset.from_list(rows)
 
 
 def export_awq(
@@ -222,30 +243,44 @@ def export_awq(
     fine-grained reading of digits / mint marks). Calibration reuses the
     project's own CoinDataset so activation statistics match real coin inputs.
     """
+    # Dataset + base are cached locally; stay offline so HF lookups fail fast
+    # instead of burning ~30s on connect-timeout retries.
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+    os.environ.setdefault("HF_DATASETS_OFFLINE", "1")
+
     import torch
     from transformers import AutoProcessor, AutoModelForImageTextToText
     from llmcompressor import oneshot
     from llmcompressor.modifiers.awq import AWQModifier
-
-    from src.data import CoinDataset
 
     model_path = Path(model_path)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info("Loading merged model for AWQ from '%s'...", model_path)
-    processor = AutoProcessor.from_pretrained(str(model_path), trust_remote_code=True)
+    processor = AutoProcessor.from_pretrained(
+        str(model_path), trust_remote_code=True, local_files_only=True,
+    )
     model = AutoModelForImageTextToText.from_pretrained(
         str(model_path),
-        torch_dtype="auto",
+        dtype="auto",
         device_map="auto",
         trust_remote_code=True,
+        local_files_only=True,
     )
 
     logger.info("Building calibration set from split '%s' (%d samples)...",
                 calibration_split, num_calibration_samples)
-    dataset = CoinDataset(config, split=calibration_split)
-    collator = _CalibrationCollator(processor, config)
+    calib_dataset = _build_awq_calibration_dataset(
+        config, processor, num_calibration_samples, calibration_split,
+    )
+
+    def data_collator(batch):
+        # Calibration runs one sample at a time; rebuild tensors from the stored
+        # nested lists, preserving each key's original (multimodal) shape.
+        assert len(batch) == 1, "AWQ calibration expects batch_size=1"
+        return {k: torch.tensor(v) for k, v in batch[0].items()}
 
     # Keep vision encoder + merger and the output head in full precision.
     # NOTE: if AWQ errors on an unmatched module, inspect model.named_modules()
@@ -261,11 +296,11 @@ def export_awq(
     logger.info("Running AWQ oneshot quantization (W4A16)...")
     oneshot(
         model=model,
-        dataset=dataset,
-        data_collator=collator,
+        dataset=calib_dataset,
+        data_collator=data_collator,
         recipe=recipe,
         max_seq_length=max_seq_length or config.model.get("max_seq_length", 2048),
-        num_calibration_samples=num_calibration_samples,
+        num_calibration_samples=min(num_calibration_samples, len(calib_dataset)),
         output_dir=str(output_dir),
     )
 
