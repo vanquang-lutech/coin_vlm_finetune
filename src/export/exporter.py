@@ -12,6 +12,7 @@ Merge notes (QLoRA + Unsloth):
 """
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -55,6 +56,13 @@ def _save_processor(adapter_path: Path, output_dir: Path, fallback=None) -> None
 
 
 def _merge_unsloth(base_model: str, adapter_path: Path, output_dir: Path) -> None:
+    # The base lives locally; force offline so Unsloth's telemetry/statistics
+    # call to HuggingFace fails fast instead of hanging 120s when HF is
+    # unreachable (which otherwise aborts the whole merge).
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+    os.environ.setdefault("UNSLOTH_DISABLE_STATISTICS", "1")
+
     from peft import PeftModel
     from unsloth import FastVisionModel
 
@@ -63,6 +71,7 @@ def _merge_unsloth(base_model: str, adapter_path: Path, output_dir: Path) -> Non
         base_model,
         load_in_4bit=False,          # CRITICAL: dequantize to bf16 before merging
         use_gradient_checkpointing=False,
+        local_files_only=True,       # base is a local dir; skip any HF lookup
     )
 
     logger.info("Applying LoRA adapter from '%s'...", adapter_path)
