@@ -23,23 +23,40 @@ logger = get_logger(__name__)
 
 
 def _resolve_base_model(config, adapter_path: Path, override: str | None) -> str:
-    """Pick the base model to merge into: explicit override > adapter_config's
-    base_model_name_or_path > model config (unsloth_name preferred)."""
+    """Pick the base model to merge into.
+
+    Priority: explicit override > model config (unsloth_name, then name) >
+    adapter_config's base_model_name_or_path. The model config is preferred over
+    adapter_config because the latter bakes in the absolute path from TRAINING
+    time, which is often stale after the checkpoint/base is moved to another
+    machine; the model config is what the user keeps current.
+    """
     if override:
         return override
+
+    config_base = config.model.get("unsloth_name", None) or config.model.get("name", None)
+    if config_base and Path(config_base).exists():
+        return config_base
+
     cfg_file = adapter_path / "adapter_config.json"
     if cfg_file.exists():
         with cfg_file.open() as f:
-            base = json.load(f).get("base_model_name_or_path")
-        if base:
-            return base
-    base = config.model.get("unsloth_name", None) or config.model.name
-    logger.warning(
-        "adapter_config.json has no base_model_name_or_path; "
-        "falling back to model config base: %s",
-        base,
+            adapter_base = json.load(f).get("base_model_name_or_path")
+        if adapter_base:
+            if config_base and not Path(config_base).exists():
+                logger.warning(
+                    "Model-config base '%s' not found on disk; "
+                    "falling back to adapter_config base '%s'.",
+                    config_base, adapter_base,
+                )
+            return adapter_base
+
+    if config_base:
+        return config_base
+    raise ValueError(
+        "Could not resolve a base model: no --base_model, no model.unsloth_name/"
+        "name, and no base_model_name_or_path in adapter_config.json."
     )
-    return base
 
 
 def _save_processor(adapter_path: Path, output_dir: Path, fallback=None) -> None:
@@ -65,14 +82,15 @@ def _merge_unsloth(base_model: str, adapter_path: Path, output_dir: Path) -> Non
 
     from unsloth import FastVisionModel
 
-    # Load DIRECTLY from the adapter checkpoint (not base + raw PeftModel): this
-    # lets Unsloth resolve the base, apply the adapter, AND attach its
-    # `save_pretrained_merged` method. A vanilla PeftModel does NOT have that
-    # method, so the old fallback path would merge into the (still 4-bit) base
-    # and save a 4-bit checkpoint — unusable for AWQ / vLLM.
-    logger.info("Loading adapter checkpoint via Unsloth (base resolved from adapter_config)...")
+    # Load the BASE via Unsloth (so the model keeps Unsloth's
+    # `save_pretrained_merged`), then attach the trained adapter IN PLACE with
+    # load_adapter. We do NOT load straight from the adapter folder because its
+    # adapter_config bakes in the stale training-time base path; and we do NOT
+    # wrap with a vanilla PeftModel because that drops save_pretrained_merged
+    # (forcing a fallback that saves a 4-bit checkpoint).
+    logger.info("Loading base '%s' via Unsloth...", base_model)
     model, processor = FastVisionModel.from_pretrained(
-        str(adapter_path),
+        base_model,
         load_in_4bit=False,          # request 16-bit; merged_16bit also dequantizes
         use_gradient_checkpointing=False,
         local_files_only=True,
@@ -83,6 +101,9 @@ def _merge_unsloth(base_model: str, adapter_path: Path, output_dir: Path) -> Non
             "Unsloth model has no save_pretrained_merged(); cannot guarantee a "
             "16-bit merge. Check the Unsloth version."
         )
+
+    logger.info("Attaching LoRA adapter from '%s' (in place)...", adapter_path)
+    model.load_adapter(str(adapter_path))
 
     logger.info("Merging + dequantizing to 16-bit (save_method='merged_16bit')...")
     model.save_pretrained_merged(
