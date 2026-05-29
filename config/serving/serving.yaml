@@ -1,0 +1,55 @@
+# FastAPI + vLLM serving config.
+#
+# Points at a MERGED (+ optionally AWQ-quantized) checkpoint produced by
+# scripts/export.py. The prompt and generation defaults are still taken from
+# config/inference/inference.yaml (merged by ConfigLoader), so the served model
+# behaves identically to scripts/inference.py.
+serving:
+  # Path to the standalone checkpoint vLLM should load. Use the AWQ output for a
+  # quantized model, or the plain merged dir for full bf16.
+  model_path: "outputs/merged_models/coin-vlm-awq"
+
+  # Quantization method vLLM applies at load time. Set to "awq" for an AWQ
+  # W4A16 export, or null/"" for a plain merged bf16 checkpoint.
+  quantization: "awq"
+
+  # vLLM engine args.
+  dtype: "auto"                 # auto picks bf16/fp16 from the checkpoint
+  max_model_len: 4096
+  gpu_memory_utilization: 0.90
+  max_num_seqs: 16              # max concurrent sequences batched by vLLM
+  trust_remote_code: true
+  limit_mm_per_prompt_image: 1  # exactly one coin image per request
+  tensor_parallel_size: 1
+  enforce_eager: false          # set true to disable CUDA graphs (lower VRAM, slower)
+  seed: 42
+
+  # Image preprocessing. The training dataset was enhanced with CLAHE + unsharp
+  # mask (fixed params), so the API MUST apply the SAME enhancement to incoming
+  # images to avoid a train/serve skew. These defaults match the dataset build.
+  preprocess:
+    enhance: true
+    mode: "full"          # full = enhance every image (matches training); smart = only low-quality
+    clahe_clip_limit: 2.0
+    clahe_tile_size: [8, 8]
+    unsharp_sigma: 2.0
+    unsharp_amount: 1.5
+    # smart-mode thresholds (ignored when mode: full)
+    contrast_threshold: 50.0
+    sharpness_threshold: 600.0
+
+  # HTTP server.
+  host: "0.0.0.0"
+  port: 8000
+
+  # Logging. Files are date-partitioned under `log_dir` and roll over on a new
+  # day/month automatically (log_rotation: daily | monthly). Layout for daily:
+  #   {log_dir}/2026-05/serve-2026-05-29.log         — application/server logs
+  #   {log_dir}/2026-05/predictions-2026-05-29.jsonl — one JSON line per request
+  # monthly:
+  #   {log_dir}/2026/serve-2026-05.log
+  #   {log_dir}/2026/predictions-2026-05.jsonl
+  # Set predictions_log: false to disable the per-request JSONL sink.
+  log_dir: "outputs/logs/serving"
+  log_rotation: "daily"
+  predictions_log: true

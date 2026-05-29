@@ -1,5 +1,7 @@
 import logging
 import os
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 import sys
 from omegaconf import DictConfig, OmegaConf
@@ -10,20 +12,99 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 _SENSITIVE_KEYS = {"token", "password", "secret", "key", "api_key", "hf_token"}
- 
- 
-def setup_logging(level: str = "INFO") -> None:
+
+
+def _date_key(rotation: str, now: datetime | None = None) -> str:
+    """The granularity key that identifies the current log bucket: 'YYYY-MM' for
+    monthly, 'YYYY-MM-DD' for daily (default)."""
+    now = now or datetime.now()
+    return now.strftime("%Y-%m") if rotation == "monthly" else now.strftime("%Y-%m-%d")
+
+
+def dated_log_path(log_dir, stem: str, ext: str, rotation: str = "daily") -> Path:
+    """Build a date-partitioned log path.
+
+    daily   -> {log_dir}/{YYYY-MM}/{stem}-{YYYY-MM-DD}.{ext}
+    monthly -> {log_dir}/{YYYY}/{stem}-{YYYY-MM}.{ext}
+    """
+    now = datetime.now()
+    log_dir = Path(log_dir)
+    if rotation == "monthly":
+        return log_dir / now.strftime("%Y") / f"{stem}-{now.strftime('%Y-%m')}.{ext}"
+    return log_dir / now.strftime("%Y-%m") / f"{stem}-{now.strftime('%Y-%m-%d')}.{ext}"
+
+
+class DatedFileHandler(logging.Handler):
+    """File handler that writes to a date-partitioned path and rolls over to a
+    new file when the day/month changes — so a long-running server splits its
+    logs by date without an external rotator."""
+
+    def __init__(self, log_dir, stem: str, ext: str = "log", rotation: str = "daily"):
+        super().__init__()
+        self.log_dir = log_dir
+        self.stem = stem
+        self.ext = ext
+        self.rotation = rotation
+        self._key: str | None = None
+        self._stream = None
+        self._open()
+
+    def _open(self) -> None:
+        path = dated_log_path(self.log_dir, self.stem, self.ext, self.rotation)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._key = _date_key(self.rotation)
+        self._stream = open(path, "a", encoding="utf-8")
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            if _date_key(self.rotation) != self._key:
+                self._stream.close()
+                self._open()
+            self._stream.write(self.format(record) + "\n")
+            self._stream.flush()
+        except Exception:  # noqa: BLE001 - logging must never raise
+            self.handleError(record)
+
+    def close(self) -> None:
+        try:
+            if self._stream:
+                self._stream.close()
+        finally:
+            super().close()
+
+
+def setup_logging(
+    level: str = "INFO",
+    log_file: str | None = None,
+    log_dir: str | None = None,
+    log_stem: str = "app",
+    log_rotation: str = "daily",
+) -> None:
+
+    handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
+
+    sink_desc = None
+    if log_dir:
+        # Date-partitioned, self-rotating file split by day/month.
+        handlers.append(DatedFileHandler(log_dir, log_stem, "log", log_rotation))
+        sink_desc = str(dated_log_path(log_dir, log_stem, "log", log_rotation))
+    elif log_file:
+        log_path = Path(log_file)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        handlers.append(logging.FileHandler(log_path, encoding="utf-8"))
+        sink_desc = log_file
 
     logging.basicConfig(
         level=getattr(logging, level.upper(), logging.INFO),
         format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
-        handlers=[
-            logging.StreamHandler(sys.stdout),
-        ],
-        force=True,    
+        handlers=handlers,
+        force=True,
     )
- 
+
+    if sink_desc:
+        logging.getLogger(__name__).info("Logging to file: %s", sink_desc)
+
     for noisy_lib in ("transformers", "datasets", "peft", "urllib3", "PIL"):
         logging.getLogger(noisy_lib).setLevel(logging.WARNING)
  

@@ -1,14 +1,22 @@
 """Export logic for fine-tuned coin VLMs: merge LoRA adapters into a standalone
-checkpoint, and convert merged checkpoints to GGUF.
+16-bit checkpoint, optionally quantize to AWQ W4A16, and convert to GGUF.
 
-Merge notes (QLoRA + Unsloth):
- - Adapters trained with QLoRA (load_in_4bit=True) must be merged into the base
-   loaded at 16-bit, NOT 4-bit — merging into a 4-bit base degrades accuracy.
- - The base is resolved from the adapter's own adapter_config.json
-   (`base_model_name_or_path`) so we merge into the SAME weights used to train.
- - For Unsloth-trained adapters (which also touch the vision projector
-   `visual_merger.mlp.*`), everything is baked into the weights here so vLLM can
-   serve a plain merged model without applying LoRA at runtime.
+Merge notes (QLoRA on a bnb 4-bit base):
+ - The QLoRA base is a bnb 4-bit (NF4) checkpoint. You cannot merge a LoRA into
+   4-bit weights, so the base is loaded 4-bit and dequantized to bf16 first; the
+   adapter (trained against those exact NF4 weights) is then merged in.
+ - Merging uses plain transformers + peft.merge_and_unload(). Unsloth's
+   save_pretrained_merged did NOT merge on the installed version (it re-saved
+   only the adapter), so it is not used.
+ - The base path is resolved from the model config (`unsloth_name`), not the
+   adapter_config, whose baked-in path is stale after the base is moved.
+ - The vision projector (`visual_merger.mlp.*`) is trained too; everything is
+   baked into the weights so vLLM can serve a plain model without runtime LoRA.
+
+AWQ notes:
+ - Quantize only the language-model Linear layers; keep the vision tower/merger
+   at full precision. Load the merged model in bf16 (fp16 overflows during AWQ
+   smoothing -> NaN). Calibration reuses the project's CoinDataset.
 """
 
 import json
