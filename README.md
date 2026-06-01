@@ -26,6 +26,56 @@ python -m pip install --no-cache-dir --no-deps "unsloth==2026.5.7"
 python -m pip install --no-cache-dir --no-deps "unsloth_zoo==2026.5.4"
 ```
 
+### Pre-download the base model (offline training box)
+
+The training GPU box cannot auto-download from the Hub at train time. Fetch the
+base model snapshot **once** into a local dir that the trainer can read, then
+point the model config at that dir (already done in
+`config/model/qwen3.5_4b.yaml` → `/data/models/Qwen3.5-4B`).
+
+```bash
+python scripts/download_model.py \
+	--repo unsloth/Qwen3.5-4B \
+	--out  /data/models/Qwen3.5-4B
+```
+
+Run it from a shell that can reach the Hub (export `HF_TOKEN` for gated repos).
+It downloads the full bf16 weights — the QLoRA backend quantizes to NF4 4-bit on
+the fly at load. Verify the local snapshot actually loads before spending GPU
+hours on a run:
+
+#### Restricted networks (mirror, no direct Hub access)
+
+If `huggingface.co` is blocked/unstable (e.g. behind the GFW) the download fails
+with proxy timeouts or `FileMetadataError: Distant resource does not seem to be
+on huggingface.co`. Use the `hf-mirror.com` mirror and **disable Xet** (the
+mirror serves plain HTTP, not the Xet protocol). Do **not** route through a flaky
+proxy — the mirror is reachable directly:
+
+```bash
+unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY
+export HF_ENDPOINT=https://hf-mirror.com   # in-region mirror
+export HF_HUB_DISABLE_XET=1                # mirror has no Xet; without this you get redirect errors
+export HF_HUB_ENABLE_HF_TRANSFER=1         # faster multi-part transfer (pip install hf_transfer)
+
+python scripts/download_model.py --repo unsloth/Qwen3.5-4B --out /data/models/Qwen3.5-4B
+# or directly: hf download unsloth/Qwen3.5-4B --local-dir /data/models/Qwen3.5-4B
+```
+
+Sanity-check the env before retrying — `env | grep -iE "HF_|proxy"` should show
+**no proxy lines** plus `HF_HUB_DISABLE_XET=1`. Downloads auto-resume from the
+`.cache/huggingface/download/*.incomplete` files, so just re-run on a drop. If
+`hf_transfer` errors against the mirror, set `HF_HUB_ENABLE_HF_TRANSFER=0` (slower
+but more robust). As a last resort when only the proxy can reach the network, use
+the mirror's `hfd.sh` + `aria2c` downloader instead.
+
+Verify the local snapshot actually loads before spending GPU hours on a run:
+
+```bash
+python scripts/verify_qwen35.py          # loads /data/models/Qwen3.5-4B offline
+python scripts/verify_qwen35.py --repo unsloth/Qwen3.5-4B   # test a Hub download instead
+```
+
 ### Config layout
 
 - `config/data/coin_dataset.yaml`: HF dataset name and split settings
@@ -42,9 +92,9 @@ Backend configs are merged on top of model/training configs when you pass
 ```bash
 python scripts/train.py \
 	--data_config config/data/coin_dataset.yaml \
-	--model_config config/model/qwen3.5_9b.yaml \
+	--model_config config/model/qwen3.5_4b.yaml \
 	--training_config config/training/training.yaml \
-	--method_config config/backend/hf_peft_lora.yaml
+	--method_config config/backend/unsloth_qlora_qwen35.yaml
 ```
 
 Override any config value:
@@ -125,6 +175,17 @@ python scripts/export.py --mode awq ... \
 	--output_dir outputs/merged_models/coin-vlm-awq
 ```
 
+Use a separate serving environment so vLLM can install a PyTorch/CUDA stack
+that matches its compiled extension:
+
+```bash
+conda create -n coin-vlm-serve python=3.11 -y
+conda activate coin-vlm-serve
+pip install uv
+uv pip install -r requirements-serve.txt
+uv pip install vllm --torch-backend=auto
+```
+
 Point `serving.model_path` at the result and launch:
 
 ```bash
@@ -133,10 +194,13 @@ python scripts/serve.py \
 	--model_config config/model/qwen3_vl_8b.yaml \
 	--training_config config/training/training.yaml \
 	--serving_config config/serving/serving.yaml \
-	--override serving.model_path=outputs/merged_models/coin-vlm-awq serving.quantization=awq
+	--override serving.model_path=outputs/merged_models/coin-vlm-awq
 ```
 
-For a non-quantized merged model, set `serving.quantization=null`.
+Keep `serving.quantization=null` for the llmcompressor compressed-tensors AWQ
+export so vLLM auto-detects the checkpoint format. Set `serving.quantization=awq`
+only for an AutoAWQ-format export. For a non-quantized merged model, also use
+`serving.quantization=null`.
 
 Query it:
 
@@ -170,7 +234,11 @@ converted to raw pixels and passed to vLLM via `mm_processor_kwargs`, mirroring
 `CoinPredictor._apply_processor_overrides` — so the served input resolution
 equals the HF inference path rather than whatever was baked into the checkpoint.
 vLLM engine settings (VRAM, max length, concurrency, quantization) live in
-`config/serving/serving.yaml`. Install vLLM in its serving env: `pip install "vllm>=0.6.6"`.
+`config/serving/serving.yaml`. If startup fails with `libcudart.so.13`, the
+installed vLLM wheel expects CUDA 13 but the environment cannot see that runtime
+library; recreate the serving env or install a vLLM wheel matching the server's
+CUDA runtime. The vLLM install docs recommend `uv pip install vllm
+--torch-backend=auto` for backend selection.
 
 **Input enhancement (important).** The training dataset was enhanced with CLAHE +
 unsharp mask (`src/data/preprocessing.py:CoinEnhancer`). The API applies the

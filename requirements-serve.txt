@@ -1,0 +1,24 @@
+# Minimal dependencies for scripts/serve.py.
+#
+# Use a fresh serving environment. Do not install the training requirements
+# first, because requirements.txt pins a training torch build that can conflict
+# with vLLM's compiled CUDA extension.
+#
+# Recommended install:
+#   uv pip install -r requirements-serve.txt
+#   uv pip install vllm --torch-backend=auto
+
+numpy>=1.26.4,<2.0.0
+Pillow>=10.0.0
+opencv-python>=4.10.0.84
+
+omegaconf>=2.3.0
+python-dotenv>=1.0.0
+pyyaml>=6.0
+
+transformers>=4.57.0
+
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9
+pyngrok>=7.0.0
