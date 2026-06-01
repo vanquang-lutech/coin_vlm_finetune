@@ -1,0 +1,34 @@
+model:
+  backend: "unsloth"
+  load_in_4bit: true
+
+  lora:
+    r: 16
+    lora_alpha: 32
+    lora_dropout: 0.0
+    # Qwen3.5-4B has a HYBRID layer layout: 24 linear-attention layers +
+    # 8 full-attention layers (every 4th layer is full attention). The
+    # standard q/k/v/o_proj names only exist on the 8 full-attention layers;
+    # the linear-attention layers use different module names. Targeting only
+    # the standard names trains ~25% of the layers — that may be enough as a
+    # first pass, but ideally we should add the linear-attention modules too
+    # once their exact names are confirmed by inspecting the loaded model.
+    #
+    # Vision is fused via MTP, not via a separate `visual_merger` — that
+    # target was removed (it does not exist on this model and would raise).
+    target_modules:
+      - "q_proj"
+      - "k_proj"
+      - "v_proj"
+      - "o_proj"
+      - "gate_proj"
+      - "up_proj"
+      - "down_proj"
+      # TODO(after first dry-run): print model.named_modules() and add the
+      # linear-attention projection names here (likely something like
+      # `linear_attn.q_proj`, `linear_attn.k_proj`, conv kernels, etc.).
+    bias: "none"
+    use_gradient_checkpointing: true
+
+training:
+  backend: "unsloth"
