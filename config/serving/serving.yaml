@@ -44,6 +44,10 @@ serving:
     contrast_threshold: 50.0
     sharpness_threshold: 600.0
 
+  # Request guards.
+  max_upload_mb: 20        # reject uploads larger than this (before decode/enhance); 0 = no limit
+  request_timeout_s: 60    # 504 if a single prediction exceeds this; 0 = no timeout
+
   # HTTP server. Shared multi-user box -> avoid the crowded default 8000.
   # Picked from the IANA dynamic/private range (49152-65535), which apps rarely
   # grab. Override per-run if needed: --override serving.port=49710
@@ -59,7 +63,10 @@ serving:
   ngrok:
     enabled: true
     domain: "embezzle-eastcoast-armoire.ngrok-free.dev"
-    authtoken: null   # falls back to $NGROK_AUTHTOKEN
+    authtoken: null    # falls back to $NGROK_AUTHTOKEN
+    # If the box can't reach bin.ngrok.com to auto-download, install the ngrok
+    # binary manually and point to it here (or via $NGROK_PATH).
+    binary_path: null  # e.g. /data/coin/coin_vlm_finetune/bin/ngrok
 
   # Logging. Files are date-partitioned under `log_dir` and roll over on a new
   # day/month automatically (log_rotation: daily | monthly). Layout for daily:

@@ -8,6 +8,7 @@ The vLLM engine is heavy to initialize, so it's built once during the FastAPI
 lifespan startup and shared across requests.
 """
 
+import asyncio
 import json
 import time
 from contextlib import asynccontextmanager
@@ -56,6 +57,13 @@ def create_app(config) -> FastAPI:
         log_dir, rotation=rotation, enabled=serving.get("predictions_log", True)
     )
 
+    # Request guards. max_upload_mb caps raw bytes BEFORE decode/enhance (the
+    # min/max_pixels resize runs later, inside vLLM, so it does not protect the
+    # decode + CLAHE step from a huge or decompression-bomb upload). 0 disables.
+    max_upload_mb = serving.get("max_upload_mb", 20)
+    max_upload_bytes = int(max_upload_mb * 1024 * 1024) if max_upload_mb else 0
+    request_timeout_s = serving.get("request_timeout_s", 60)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         logger.info("Starting vLLM coin engine...")
@@ -99,13 +107,39 @@ def create_app(config) -> FastAPI:
                 detail=f"Expected an image upload, got content-type={file.content_type}",
             )
 
+        # Reject oversized uploads before reading the whole body when the client
+        # sent a Content-Length (file.size).
+        if max_upload_bytes and file.size and file.size > max_upload_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large ({file.size} bytes); limit is {max_upload_bytes} bytes.",
+            )
+
         data = await file.read()
         if not data:
             raise HTTPException(status_code=400, detail="Empty file.")
+        # Second check in case Content-Length was absent/understated.
+        if max_upload_bytes and len(data) > max_upload_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large ({len(data)} bytes); limit is {max_upload_bytes} bytes.",
+            )
 
         start = time.perf_counter()
         try:
-            result = await engine.predict(data)
+            if request_timeout_s:
+                result = await asyncio.wait_for(
+                    engine.predict(data), timeout=request_timeout_s
+                )
+            else:
+                result = await engine.predict(data)
+        except asyncio.TimeoutError:
+            logger.warning("Prediction timed out (%ss) for %s", request_timeout_s, file.filename)
+            pred_log.write({"file": file.filename, "error": f"timeout>{request_timeout_s}s"})
+            raise HTTPException(
+                status_code=504,
+                detail=f"Prediction timed out after {request_timeout_s}s.",
+            )
         except Exception as exc:  # noqa: BLE001 - surface as a clean 500
             logger.exception("Prediction failed for %s", file.filename)
             pred_log.write({"file": file.filename, "error": str(exc)})

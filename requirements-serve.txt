@@ -10,13 +10,18 @@
 
 numpy>=1.26.4,<2.0.0
 Pillow>=10.0.0
-opencv-python>=4.10.0.84
+opencv-python-headless>=4.10.0.84   # headless: no libGL needed (server/Docker)
 
 omegaconf>=2.3.0
 python-dotenv>=1.0.0
 pyyaml>=6.0
 
 transformers>=4.57.0
+
+# Pulled transitively by src.data / src.evaluate __init__ (the serving engine
+# imports parse_response + CoinEnhancer, which load these packages' __init__).
+datasets>=3.0.0
+tqdm>=4.66.0
 
 fastapi>=0.110.0
 uvicorn[standard]>=0.29.0

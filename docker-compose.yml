@@ -1,0 +1,28 @@
+# Simple one-command run of the coin VLM serving API.
+#
+#   docker compose build
+#   docker compose up -d           # start in background, auto-restarts on crash
+#   docker compose logs -f         # follow logs
+#   docker compose down            # stop
+#
+# Edit the GPU id, the model volume path, and ports for your host.
+services:
+  coin-vlm-serve:
+    build: .
+    image: coin-vlm-serve
+    container_name: coin-vlm-serve
+    ports:
+      - "49710:49710"
+    volumes:
+      # host model dir -> /models/coin-awq (matches Dockerfile CMD override)
+      - /data/coin/coin_vlm_finetune/data/models/Qwen3-VL-8B-coin-awq:/models/coin-awq:ro
+      # persist date-partitioned logs + predictions.jsonl on the host
+      - /data/coin/coin_vlm_finetune/outputs/logs/serving:/logs
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["3"]   # pick a free GPU
+              capabilities: [gpu]
+    restart: unless-stopped

@@ -1,0 +1,19 @@
+# Keep the build context small: never ship weights, data, logs, or envs.
+.venv/
+**/__pycache__/
+*.pyc
+.git/
+.gitignore
+
+# Large / runtime-mounted artifacts
+data/
+outputs/
+output/
+*.whl
+*.gguf
+*.safetensors
+
+# Local tooling
+uv.lock
+*.log
+.env
