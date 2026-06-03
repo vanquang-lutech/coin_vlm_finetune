@@ -86,6 +86,18 @@ class VLLMCoinEngine:
         self._enhance_mode = (self._preprocess.get("mode", "full")
                               if self._preprocess else "full")
         self._enhancer = build_enhancer(self._preprocess) if self._enhance_on else None
+
+        # Per-image resize cap BEFORE concat. Training did NOT resize_to_fit —
+        # the processor's min/max_pixels (smart_resize) does all sizing — so this
+        # is OFF by default. Set both max_img_w/h only to reintroduce a pre-concat
+        # cap (e.g. to match a production flow that used resize_to_fit).
+        pp = self._preprocess or {}
+        mw = pp.get("max_img_w", None)
+        mh = pp.get("max_img_h", None)
+        self._max_img_w = int(mw) if mw else None
+        self._max_img_h = int(mh) if mh else None
+        self._resize_on = bool(self._max_img_w and self._max_img_h)
+
         if self._enhance_on:
             logger.info(
                 "Input enhancement ENABLED (mode=%s, clahe_clip=%.2f tile=%s, "
@@ -99,6 +111,15 @@ class VLLMCoinEngine:
                 "Input enhancement DISABLED. The model was trained on CLAHE+unsharp "
                 "enhanced images; serving raw images may reduce accuracy."
             )
+        resize_desc = (
+            f"resize_to_fit({self._max_img_w}x{self._max_img_h})"
+            if self._resize_on else "no-resize (training-matched)"
+        )
+        logger.info(
+            "Input pipeline per request: 2 images -> enhance(%s) -> %s -> "
+            "concat side-by-side -> vLLM(min/max_pixels).",
+            "on" if self._enhance_on else "off", resize_desc,
+        )
         logger.info("vLLM engine ready.")
 
     def _enhance(self, pil_image: Image.Image) -> Image.Image:
@@ -113,6 +134,38 @@ class VLLMCoinEngine:
             bgr = self._enhancer.enhance(bgr)
         rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
         return Image.fromarray(rgb)
+
+    def _resize_to_fit(self, img: Image.Image) -> Image.Image:
+        """Downscale so img fits within max_img_w x max_img_h, preserving aspect
+        ratio (LANCZOS). No-op if already within bounds. Mirrors the training
+        resize_to_fit."""
+        w, h = img.size
+        if w <= self._max_img_w and h <= self._max_img_h:
+            return img
+        scale = min(self._max_img_w / w, self._max_img_h / h)
+        return img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+
+    @staticmethod
+    def _concat(img1: Image.Image, img2: Image.Image) -> Image.Image:
+        """Concatenate two images side-by-side on a black canvas, vertically
+        centered (obverse | reverse). Mirrors the training concat_images."""
+        total_w = img1.width + img2.width
+        max_h = max(img1.height, img2.height)
+        canvas = Image.new("RGB", (total_w, max_h), (0, 0, 0))
+        canvas.paste(img1, (0, (max_h - img1.height) // 2))
+        canvas.paste(img2, (img1.width, (max_h - img2.height) // 2))
+        return canvas
+
+    def _prep_one(self, image) -> Image.Image:
+        """Per-image preprocessing matching training: decode -> RGB ->
+        CLAHE+unsharp enhance. NO resize_to_fit (training did not resize); the
+        optional cap runs only if max_img_w/h are configured. Concat happens
+        after; final sizing is done by vLLM via min/max_pixels."""
+        pil = self._to_pil(image)
+        pil = self._enhance(pil)         # enhance BEFORE concat (matches training)
+        if self._resize_on:
+            pil = self._resize_to_fit(pil)
+        return pil
 
     def _resolve_mm_processor_kwargs(self) -> dict:
         """Convert config processor min/max_pixels (in vision-token units) to the
@@ -208,15 +261,19 @@ class VLLMCoinEngine:
             raise FileNotFoundError(f"Image not found: {image}")
         return Image.open(path).convert("RGB")
 
-    async def predict(self, image) -> dict:
-        """Run a single coin image through vLLM and return the parsed result."""
-        pil_image = self._to_pil(image)
-        pil_image = self._enhance(pil_image)  # match training-time CLAHE+unsharp
+    async def predict(self, obverse, reverse) -> dict:
+        """Run an obverse+reverse coin pair through vLLM and return the parsed
+        result. Reproduces the training/production preprocessing: enhance each
+        image (CLAHE+unsharp), resize_to_fit each, then concatenate them
+        side-by-side into the single image the model was trained on."""
+        img1 = self._prep_one(obverse)
+        img2 = self._prep_one(reverse)
+        combined = self._concat(img1, img2)
         prompt_text = self._build_prompt_text()
 
         vllm_prompt = {
             "prompt": prompt_text,
-            "multi_modal_data": {"image": pil_image},
+            "multi_modal_data": {"image": combined},
         }
 
         request_id = str(uuid.uuid4())

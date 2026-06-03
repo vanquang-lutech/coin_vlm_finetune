@@ -2,7 +2,10 @@
 
 Endpoints:
   GET  /health            liveness + which checkpoint is loaded
-  POST /predict           multipart image upload  -> {year, mint_mark, raw, parse_ok}
+  POST /predict           multipart upload of TWO images (obverse + reverse)
+                          -> {year, mint_mark, raw, parse_ok}. The two images are
+                          enhanced, resized to fit, and concatenated side-by-side
+                          to match the training-time input.
 
 The vLLM engine is heavy to initialize, so it's built once during the FastAPI
 lifespan startup and shared across requests.
@@ -86,6 +89,18 @@ def create_app(config) -> FastAPI:
         lifespan=lifespan,
     )
 
+    @app.middleware("http")
+    async def add_process_time_header(request, call_next):
+        # Total SERVER-side handling time incl. reading the (uploaded) body.
+        # Compare against the client's TTFB: if X-Process-Time-Ms is small but
+        # the client sees >1s, the gap is network/upload (e.g. an SSH tunnel),
+        # not server compute. The gap between this and the per-prediction
+        # latency_ms log is the time spent waiting for the upload to arrive.
+        start = time.perf_counter()
+        response = await call_next(request)
+        response.headers["X-Process-Time-Ms"] = f"{(time.perf_counter() - start) * 1000:.1f}"
+        return response
+
     @app.get("/health", response_model=HealthResponse)
     async def health():
         serving = config.serving
@@ -95,64 +110,70 @@ def create_app(config) -> FastAPI:
             quantization=serving.get("quantization", None) or None,
         )
 
+    async def _read_image(file: UploadFile, label: str) -> bytes:
+        """Validate content-type + size and return the bytes of one upload."""
+        if not (file.content_type or "").startswith("image/"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"'{label}' must be an image; got content-type={file.content_type}",
+            )
+        if max_upload_bytes and file.size and file.size > max_upload_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"'{label}' too large ({file.size} bytes); limit is {max_upload_bytes} bytes.",
+            )
+        data = await file.read()
+        if not data:
+            raise HTTPException(status_code=400, detail=f"'{label}' is empty.")
+        if max_upload_bytes and len(data) > max_upload_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"'{label}' too large ({len(data)} bytes); limit is {max_upload_bytes} bytes.",
+            )
+        return data
+
     @app.post("/predict", response_model=CoinPrediction)
-    async def predict(file: UploadFile = File(..., description="Coin image.")):
+    async def predict(
+        obverse: UploadFile = File(..., description="Obverse (front) coin image."),
+        reverse: UploadFile = File(..., description="Reverse (back) coin image."),
+    ):
         engine: VLLMCoinEngine = state.get("engine")
         if engine is None:
             raise HTTPException(status_code=503, detail="Engine not ready.")
 
-        if not (file.content_type or "").startswith("image/"):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Expected an image upload, got content-type={file.content_type}",
-            )
-
-        # Reject oversized uploads before reading the whole body when the client
-        # sent a Content-Length (file.size).
-        if max_upload_bytes and file.size and file.size > max_upload_bytes:
-            raise HTTPException(
-                status_code=413,
-                detail=f"File too large ({file.size} bytes); limit is {max_upload_bytes} bytes.",
-            )
-
-        data = await file.read()
-        if not data:
-            raise HTTPException(status_code=400, detail="Empty file.")
-        # Second check in case Content-Length was absent/understated.
-        if max_upload_bytes and len(data) > max_upload_bytes:
-            raise HTTPException(
-                status_code=413,
-                detail=f"File too large ({len(data)} bytes); limit is {max_upload_bytes} bytes.",
-            )
+        obv = await _read_image(obverse, "obverse")
+        rev = await _read_image(reverse, "reverse")
+        names = f"{obverse.filename}|{reverse.filename}"
 
         start = time.perf_counter()
         try:
             if request_timeout_s:
                 result = await asyncio.wait_for(
-                    engine.predict(data), timeout=request_timeout_s
+                    engine.predict(obv, rev), timeout=request_timeout_s
                 )
             else:
-                result = await engine.predict(data)
+                result = await engine.predict(obv, rev)
         except asyncio.TimeoutError:
-            logger.warning("Prediction timed out (%ss) for %s", request_timeout_s, file.filename)
-            pred_log.write({"file": file.filename, "error": f"timeout>{request_timeout_s}s"})
+            logger.warning("Prediction timed out (%ss) for %s", request_timeout_s, names)
+            pred_log.write({"files": names, "error": f"timeout>{request_timeout_s}s"})
             raise HTTPException(
                 status_code=504,
                 detail=f"Prediction timed out after {request_timeout_s}s.",
             )
         except Exception as exc:  # noqa: BLE001 - surface as a clean 500
-            logger.exception("Prediction failed for %s", file.filename)
-            pred_log.write({"file": file.filename, "error": str(exc)})
+            logger.exception("Prediction failed for %s", names)
+            pred_log.write({"files": names, "error": str(exc)})
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
         latency_ms = round((time.perf_counter() - start) * 1000, 1)
         logger.info(
-            "predict file=%s year=%s mint_mark=%s parse_ok=%s latency_ms=%s",
-            file.filename, result.get("year"), result.get("mint_mark"),
+            "predict files=%s year=%s mint_mark=%s parse_ok=%s latency_ms=%s",
+            names, result.get("year"), result.get("mint_mark"),
             result.get("parse_ok"), latency_ms,
         )
         pred_log.write({
-            "file": file.filename,
+            "obverse": obverse.filename,
+            "reverse": reverse.filename,
             "year": result.get("year"),
             "mint_mark": result.get("mint_mark"),
             "parse_ok": result.get("parse_ok"),

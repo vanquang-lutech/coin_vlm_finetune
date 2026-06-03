@@ -43,6 +43,12 @@ serving:
     # smart-mode thresholds (ignored when mode: full)
     contrast_threshold: 50.0
     sharpness_threshold: 600.0
+    # Two-image concat (obverse|reverse): each image is enhanced, then
+    # concatenated side-by-side. Training did NOT resize_to_fit per image — vLLM's
+    # min/max_pixels does all sizing — so the per-image resize cap is OFF (null).
+    # Set both to a size (e.g. 518) only to reintroduce a pre-concat resize.
+    max_img_w: null
+    max_img_h: null
 
   # Request guards.
   max_upload_mb: 20        # reject uploads larger than this (before decode/enhance); 0 = no limit

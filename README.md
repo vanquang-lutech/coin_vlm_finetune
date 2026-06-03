@@ -206,7 +206,9 @@ Query it:
 
 ```bash
 curl http://localhost:49710/health
-curl -X POST http://localhost:49710/predict -F "file=@path/to/coin.jpg"
+# /predict takes TWO images: obverse (front) + reverse (back).
+curl -X POST http://localhost:49710/predict \
+  -F "obverse=@front.jpg" -F "reverse=@back.jpg"
 # -> {"year": "1921", "mint_mark": "S", "raw": "...", "parse_ok": true}
 ```
 
@@ -240,13 +242,21 @@ library; recreate the serving env or install a vLLM wheel matching the server's
 CUDA runtime. The vLLM install docs recommend `uv pip install vllm
 --torch-backend=auto` for backend selection.
 
-**Input enhancement (important).** The training dataset was enhanced with CLAHE +
-unsharp mask (`src/data/preprocessing.py:CoinEnhancer`). The API applies the
-**same** enhancement to every uploaded image before inference — otherwise the
-model sees a different image distribution than it trained on (train/serve skew).
-Controlled by `serving.preprocess` (defaults match the dataset build: CLAHE
-clip=2.0/tile=8×8, unsharp sigma=2.0/amount=1.5, `mode: full`). Set
-`serving.preprocess.enhance=false` only if you serve a model trained on raw images.
+**Input preprocessing (important).** Each request sends two images
+(obverse + reverse). The API reproduces the training/production pipeline exactly:
+
+```
+per image:  decode → RGB → CLAHE + unsharp           (NO per-image resize)
+then:       concat side-by-side on a black canvas (obverse | reverse, native size)
+then:       vLLM smart_resize (min/max_pixels) → normalize → patchify
+```
+
+Training did **not** resize each image (the processor's `min/max_pixels` does all
+sizing), so the per-image `resize_to_fit` cap is OFF by default
+(`serving.preprocess.max_img_w/max_img_h: null`). Set both to a size (e.g. 518) to
+reintroduce a pre-concat resize. Enhancement (CLAHE clip=2.0/tile=8×8, unsharp
+sigma=2.0/amount=1.5, `mode: full`) runs per image before concat; set
+`serving.preprocess.enhance=false` only if the model was trained on un-enhanced images.
 
 **Logs.** Date-partitioned under `serving.log_dir` (default `outputs/logs/serving/`),
 rolling over by `serving.log_rotation` (`daily` | `monthly`). Daily layout:
