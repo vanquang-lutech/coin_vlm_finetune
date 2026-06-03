@@ -21,9 +21,9 @@ serving:
 
   # vLLM engine args.
   dtype: "auto"                 # auto picks bf16/fp16 from the checkpoint
-  max_model_len: 4096
-  gpu_memory_utilization: 0.90
-  max_num_seqs: 16              # max concurrent sequences batched by vLLM
+  max_model_len: 2048
+  gpu_memory_utilization: 0.25
+  max_num_seqs: 4              # max concurrent sequences batched by vLLM
   trust_remote_code: true
   limit_mm_per_prompt_image: 1  # exactly one coin image per request
   tensor_parallel_size: 1
@@ -43,16 +43,6 @@ serving:
     # smart-mode thresholds (ignored when mode: full)
     contrast_threshold: 50.0
     sharpness_threshold: 600.0
-    # Two-image concat (obverse|reverse): each image is enhanced, then
-    # concatenated side-by-side. Training did NOT resize_to_fit per image — vLLM's
-    # min/max_pixels does all sizing — so the per-image resize cap is OFF (null).
-    # Set both to a size (e.g. 518) only to reintroduce a pre-concat resize.
-    max_img_w: null
-    max_img_h: null
-
-  # Request guards.
-  max_upload_mb: 20        # reject uploads larger than this (before decode/enhance); 0 = no limit
-  request_timeout_s: 60    # 504 if a single prediction exceeds this; 0 = no timeout
 
   # HTTP server. Shared multi-user box -> avoid the crowded default 8000.
   # Picked from the IANA dynamic/private range (49152-65535), which apps rarely
@@ -67,11 +57,9 @@ serving:
   # NGROK_AUTHTOKEN env var (preferred) or `authtoken:` here.
   #   export NGROK_AUTHTOKEN=xxxxx
   ngrok:
-    enabled: true
+    enabled: false
     domain: "embezzle-eastcoast-armoire.ngrok-free.dev"
-    authtoken: null    # falls back to $NGROK_AUTHTOKEN
-    # If the box can't reach bin.ngrok.com to auto-download, install the ngrok
-    # binary manually and point to it here (or via $NGROK_PATH).
+    authtoken: null   # falls back to $NGROK_AUTHTOKEN
     binary_path: null  # e.g. /data/coin/coin_vlm_finetune/bin/ngrok
 
   # Logging. Files are date-partitioned under `log_dir` and roll over on a new
