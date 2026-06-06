@@ -1,6 +1,14 @@
-name: "unsloth/Qwen3.5-4B"
-model_name: "unsloth/Qwen3.5-4B"
-unsloth_name: "unsloth/Qwen3.5-4B"
+# Qwen3.5-4B, fine-tuned via Unsloth QLoRA (config/backend/unsloth_qlora_qwen35.yaml).
+#
+# The training box cannot auto-download from the Hub at train time, so the
+# weights are pre-fetched to a local dir and the loader reads from disk:
+#   python scripts/download_model.py --repo unsloth/Qwen3.5-4B --out /data/models/Qwen3.5-4B
+# `name`/`model_name`/`unsloth_name` therefore point at that LOCAL directory,
+# not the Hub repo id. To run on a box with egress, set them back to
+# "unsloth/Qwen3.5-4B".
+name: "/data/models/Qwen3.5-4B"
+model_name: "/data/models/Qwen3.5-4B"
+unsloth_name: "/data/models/Qwen3.5-4B"
 trust_remote_code: true
 torch_dtype: "bfloat16"
 device_map: "auto"

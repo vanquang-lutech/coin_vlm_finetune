@@ -1,5 +1,9 @@
-name: "Qwen/Qwen3.5-VL-9B"
-model_name: "Qwen/Qwen3.5-VL-9B"
+# Qwen3.5-9B (unified vision-language; the family has no "-VL" suffix).
+# Pre-fetch weights locally on a no-egress box:
+#   python scripts/download_model.py --repo unsloth/Qwen3.5-9B --out /data/models/Qwen3.5-9B
+# then point name/model_name/unsloth_name at that local dir.
+name: "unsloth/Qwen3.5-9B"
+model_name: "unsloth/Qwen3.5-9B"
 unsloth_name: "unsloth/Qwen3.5-9B"
 trust_remote_code: true
 torch_dtype: "bfloat16"
@@ -7,14 +11,20 @@ device_map: "auto"
 attn_implementation: "flash_attention_2"
 gradient_checkpointing: true
 max_seq_length: 2048
- 
-processor:
-  min_pixels: 256
-  max_pixels: 512
 
+# Matched to qwen3.5_4b.yaml so 9B vs 4B is an apples-to-apples comparison and
+# so mint-marks are seen at full resolution. On A100-40GB this raises peak VRAM
+# (9B bf16 LoRA peak ~high-30s GB at batch 4); if you OOM, lower
+# per_device_train/eval_batch_size (raise gradient_accumulation_steps to keep
+# the effective batch) BEFORE lowering these pixels.
+processor:
+  min_pixels: 512
+  max_pixels: 1280
+
+# Identical prompt to qwen3.5_4b.yaml — required for a fair 9B-vs-4B comparison.
 prompt:
-  system: "You are an expert coin analyst."
-  user: "Analyze the coin image and extract year and mint mark. Return JSON: {\"year\": \"YYYY\", \"mint_mark\": \"X\"}"
+  system: "You are a coin expert."
+  user: "Extract year and mint mark."
   response_format: "json"
   response_template:
     year: "{year}"
