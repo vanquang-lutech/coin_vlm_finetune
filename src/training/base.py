@@ -164,7 +164,7 @@ class BaseTrainer(ABC):
             gradient_accumulation_steps= training_args.gradient_accumulation_steps,
             learning_rate= training_args.learning_rate,
             lr_scheduler_type= training_args.lr_scheduler_type,
-            warmup_ratio= training_args.warmup_ratio,
+            warmup_steps= training_args.warmup_steps,
             weight_decay= training_args.weight_decay,
             max_grad_norm= training_args.max_grad_norm,
             bf16= training_args.bf16,

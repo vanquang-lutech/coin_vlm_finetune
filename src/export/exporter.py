@@ -25,7 +25,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from src.utils import get_logger
+from src.utils import get_logger, safe_template_kwargs
 
 logger = get_logger(__name__)
 
@@ -227,7 +227,8 @@ def _build_awq_calibration_dataset(config, processor, num_samples: int, split: s
         item = coin[i]
         messages = msg_builder._build_messages(item["label"])
         text = processor.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=False, enable_thinking=False,
+            messages, tokenize=False, add_generation_prompt=False,
+            **safe_template_kwargs(processor, {"enable_thinking": False}),
         )
         inputs = processor(text=[text], images=[item["image"]], return_tensors="pt")
         rows.append({k: v.tolist() for k, v in inputs.items()})

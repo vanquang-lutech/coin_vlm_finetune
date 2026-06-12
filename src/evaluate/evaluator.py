@@ -7,6 +7,7 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from .metrics import compute_metrics, parse_response
+from src.utils import safe_template_kwargs
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,15 @@ class CoinEvaluator:
 
         self.device = next(self.model.parameters()).device
 
+        # Only forward `enable_thinking` when the chat template declares it as a
+        # free variable (Qwen3 text / *-Thinking* variants). For templates that
+        # don't read it (Qwen3-VL-Instruct, Qwen2.5, InternVL3) transformers>=5.4
+        # warns on every apply_chat_template call; safe_template_kwargs keeps the
+        # eval log clean by skipping it.
+        self._template_kwargs = safe_template_kwargs(
+            self.processor, {"enable_thinking": False}
+        )
+
     def _apply_processor_overrides(self, processor) -> None:
         """Ensure eval-time image resolution matches the configured processor
         (config.processor or config.model.processor). Without this, a
@@ -47,16 +57,53 @@ class CoinEvaluator:
             processor_config = self.config.model.get("processor", None)
         if processor_config is None:
             return
-        try:
-            processor.image_processor.min_pixels = processor_config.min_pixels * 28 * 28
-            processor.image_processor.max_pixels = processor_config.max_pixels * 28 * 28
-            logger.info(
-                "Eval processor overrides applied: min_pixels=%d, max_pixels=%d",
-                processor_config.min_pixels,
-                processor_config.max_pixels,
-            )
-        except AttributeError:
+
+        image_processor = getattr(processor, "image_processor", None)
+        if image_processor is None:
             logger.warning("Processor has no image_processor; skipping resolution override.")
+            return
+
+        import transformers
+        from packaging.version import parse as parse_version
+
+        min_pixels = processor_config.min_pixels * 28 * 28
+        max_pixels = processor_config.max_pixels * 28 * 28
+        is_v5 = parse_version(transformers.__version__).major >= 5
+
+        if is_v5:
+            # transformers >= 5: min_pixels/max_pixels are read-only properties
+            # backed by `size` (a SizeDict supporting `in` and item assignment).
+            size = getattr(image_processor, "size", None)
+            if size is not None and "shortest_edge" in size and "longest_edge" in size:
+                size["shortest_edge"] = min_pixels
+                size["longest_edge"] = max_pixels
+                logger.info(
+                    "Eval processor overrides applied (v5 size dict): "
+                    "min_pixels=%d, max_pixels=%d",
+                    min_pixels,
+                    max_pixels,
+                )
+            else:
+                logger.warning(
+                    "transformers v5 image_processor has no size dict with "
+                    "shortest_edge/longest_edge; skipping resolution override."
+                )
+        else:
+            # transformers < 5: writable min_pixels/max_pixels attributes.
+            if hasattr(image_processor, "min_pixels"):
+                image_processor.min_pixels = min_pixels
+                image_processor.max_pixels = max_pixels
+                logger.info(
+                    "Eval processor overrides applied (v4 attributes): "
+                    "min_pixels=%d, max_pixels=%d",
+                    min_pixels,
+                    max_pixels,
+                )
+            else:
+                logger.warning(
+                    "transformers v4 image_processor has no min_pixels attribute; "
+                    "skipping resolution override."
+                )
 
     def evaluate(self, dataset) -> dict:
         logger.info("Running evaluation on %d samples...", len(dataset))
@@ -226,7 +273,7 @@ class CoinEvaluator:
                 self._build_eval_messages(),
                 tokenize=False,
                 add_generation_prompt=True,
-                enable_thinking=False,
+                **self._template_kwargs,
             )
             for _ in batch
         ]

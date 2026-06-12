@@ -7,6 +7,7 @@ from .logger import (
     dated_log_path,
 )
 from .seed import set_seed
+from .chat_template import safe_template_kwargs
 
 __all__ = [
     "ConfigLoader",
@@ -16,4 +17,5 @@ __all__ = [
     "finish_wandb",
     "dated_log_path",
     "set_seed",
+    "safe_template_kwargs",
 ]

@@ -3,6 +3,8 @@ import logging
 from typing import Any
 import torch
 
+from src.utils import safe_template_kwargs
+
 logger = logging.getLogger(__name__)
 
 class CoinDataCollator:
@@ -11,6 +13,15 @@ class CoinDataCollator:
         self.processor = processor
         self.config = config
         self.prompt = self._resolve_prompt()
+        # `enable_thinking` is a Qwen3 text / *-Thinking* chat-template variable.
+        # Templates that don't actually read it (Qwen3-VL-Instruct, Qwen2.5,
+        # InternVL3) make transformers>=5.4 warn on every apply_chat_template
+        # call ("Kwargs passed to processor.__call__ have to be in
+        # processor_kwargs dict, not in **kwargs"). safe_template_kwargs forwards
+        # it only when the active template declares it as a free variable.
+        self._template_kwargs = safe_template_kwargs(
+            self.processor, {"enable_thinking": False}
+        )
 
     def __call__(self, batch: list[dict]) -> dict[str, Any]:
         images = [item["image"] for item in batch]
@@ -23,7 +34,7 @@ class CoinDataCollator:
                 messages,
                 tokenize=False,
                 add_generation_prompt=False,
-                enable_thinking=False,
+                **self._template_kwargs,
             ) for messages in messages_batch
         ]
 
@@ -38,7 +49,7 @@ class CoinDataCollator:
                 msgs,
                 tokenize=False,
                 add_generation_prompt=True,
-                enable_thinking=False,
+                **self._template_kwargs,
             ) for msgs in prompt_only_messages
         ]
 

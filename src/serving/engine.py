@@ -22,7 +22,7 @@ from PIL import Image
 
 from src.data.preprocessing import from_config as build_enhancer
 from src.evaluate.metrics import parse_response
-from src.utils import get_logger
+from src.utils import get_logger, safe_template_kwargs
 
 logger = get_logger(__name__)
 
@@ -247,7 +247,7 @@ class VLLMCoinEngine:
             messages,
             tokenize=False,
             add_generation_prompt=True,
-            enable_thinking=False,
+            **safe_template_kwargs(self.processor, {"enable_thinking": False}),
         )
 
     @staticmethod

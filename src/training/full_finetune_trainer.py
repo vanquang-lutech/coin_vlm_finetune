@@ -19,7 +19,7 @@ class FullFinetuneTrainer(BaseTrainer):
             gradient_accumulation_steps= training_config.gradient_accumulation_steps,
             learning_rate= training_config.learning_rate,
             lr_scheduler_type= training_config.lr_scheduler_type,
-            warmup_ratio= training_config.warmup_ratio,
+            warmup_steps= training_config.warmup_steps,
             weight_decay= training_config.weight_decay,
             max_grad_norm= training_config.max_grad_norm,
             bf16= training_config.bf16,

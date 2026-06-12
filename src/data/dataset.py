@@ -1,8 +1,9 @@
 import logging
+import os
 import random
 from collections import defaultdict
 
-from datasets import load_dataset
+from datasets import load_dataset, load_from_disk
 from torch.utils.data import Dataset
 
 logger = logging.getLogger(__name__)
@@ -12,11 +13,7 @@ class CoinDataset(Dataset):
     def __init__(self, config, split: str = "train"):
         self.config = config
         self.split = split
-        self.data = load_dataset(
-            self.config.data.hf_dataset_name,
-            split=split,
-            cache_dir=self.config.data.get("cache_dir", None),
-        )
+        self.data = self._load_split(self.config.data.hf_dataset_name, split)
 
         # Build an index list. By default it is the identity (one entry per
         # underlying sample). If class_balance is configured AND this is the
@@ -31,6 +28,26 @@ class CoinDataset(Dataset):
             self.config.data.hf_dataset_name,
             len(self.data),
             len(self.indices),
+        )
+
+    def _load_split(self, name: str, split: str):
+        """Load one split, accepting three sources transparently:
+
+        1. A ``save_to_disk`` folder (has ``dataset_dict.json``) -> load_from_disk.
+        2. Any other local folder (e.g. a hub-cache snapshot of parquet files)
+           -> load_dataset on the LOCAL path (no Hub resolution -> offline-safe).
+        3. A Hub repo id -> load_dataset with the repo id (needs network unless
+           a builder module is already cached).
+        """
+        if os.path.isdir(name):
+            if os.path.exists(os.path.join(name, "dataset_dict.json")):
+                return load_from_disk(name)[split]
+            return load_dataset(name, split=split)
+
+        return load_dataset(
+            name,
+            split=split,
+            cache_dir=self.config.data.get("cache_dir", None),
         )
 
     def __len__(self):

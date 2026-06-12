@@ -4,6 +4,7 @@ import torch
 from PIL import Image
 
 from src.evaluate.metrics import parse_response
+from src.utils import safe_template_kwargs
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +61,7 @@ class CoinPredictor:
             messages,
             tokenize=False,
             add_generation_prompt=True,
-            enable_thinking=False,
+            **safe_template_kwargs(self.processor, {"enable_thinking": False}),
         )
 
         response = self._generate([pil_image], [text])[0]
@@ -81,7 +82,7 @@ class CoinPredictor:
                 self._build_messages(),
                 tokenize=False,
                 add_generation_prompt=True,
-                enable_thinking=False,
+                **safe_template_kwargs(self.processor, {"enable_thinking": False}),
             )
 
             texts = [text] * len(pil_images)
