@@ -22,6 +22,33 @@ class CoinDataCollator:
         self._template_kwargs = safe_template_kwargs(
             self.processor, {"enable_thinking": False}
         )
+        self._maybe_limit_image_patches()
+
+    def _maybe_limit_image_patches(self) -> None:
+        """Cap InternVL dynamic tiling so one image can't blow past max_seq_length.
+
+        InternVL splits an image into up to `max_patches` tiles (default 12) of
+        `image_seq_length` (256) tokens each, plus a thumbnail when tiled. A
+        high-tile image (e.g. 2560 tokens) then gets cut by the collator's
+        truncation, and InternVL's processor raises "Mismatch in image token
+        count ... Likely due to truncation". Bounding max_patches keeps every
+        image comfortably under max_seq_length. No-op for processors without
+        this attribute (e.g. Qwen), so it's safe in the shared collator.
+        """
+        max_patches = self.config.model.get("image_max_patches", None)
+        if max_patches is None:
+            return
+        img_proc = getattr(self.processor, "image_processor", None)
+        if img_proc is not None and hasattr(img_proc, "max_patches"):
+            img_proc.max_patches = int(max_patches)
+            logger.info(
+                "[Collator] Capped InternVL image tiling: max_patches=%d", int(max_patches)
+            )
+        else:
+            logger.warning(
+                "[Collator] model.image_max_patches=%s set, but processor has no "
+                "image_processor.max_patches; ignoring.", max_patches
+            )
 
     def __call__(self, batch: list[dict]) -> dict[str, Any]:
         images = [item["image"] for item in batch]
