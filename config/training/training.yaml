@@ -8,7 +8,10 @@ per_device_eval_batch_size: 4
 gradient_accumulation_steps: 2
 learning_rate: 1.0e-4
 lr_scheduler_type: "cosine"
-warmup_ratio: 0.03
+# transformers>=5.x: warmup_steps accepts a float <1 as a *ratio* of total
+# steps (ceil(total_steps * value)) or an int >=1 as an absolute step count.
+# 0.03 == old warmup_ratio behaviour. warmup_ratio is deprecated.
+warmup_steps: 0.03
 weight_decay: 0.01
 max_grad_norm: 1.0
  
@@ -59,9 +62,14 @@ deterministic: false
  
 early_stopping_patience:
   enabled: true
-  # Patience: number of evals without `threshold`-improvement before stop.
-  # With boolean metric on 512-sample subsample (~±2% noise), threshold=0.001
-  # is below noise floor — it would stop on random fluctuation. 0.005 (0.5pp)
-  # is the smallest improvement we can trust. Patience 5 evals = 500 steps.
-  patience: 5
-  threshold: 0.005
+  # HF EarlyStopping: counter resets only if `new > best + threshold`.
+  # Real per-eval improvement in mid-training is typically 0.003–0.01 on
+  # extract_match — setting threshold to 0.005 ate most of that budget and
+  # stopped training inside the first epoch.
+  #
+  # threshold=0.0 means ANY strict improvement keeps training alive. Sampling
+  # noise on 512 samples (~±2pp) is absorbed by the larger patience window:
+  # we need `patience` *consecutive* no-improvement evals, so a few unlucky
+  # eval ticks won't kill the run.
+  patience: 10        # 10 evals * 100 steps = 1000 steps tolerance ~= 1 epoch
+  threshold: 0.0

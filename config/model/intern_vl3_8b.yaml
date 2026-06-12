@@ -1,0 +1,40 @@
+# InternVL3-8B via Unsloth (EXPERIMENTAL).
+#
+# `unsloth/InternVL3-8B` is an Unsloth-hosted checkpoint, but InternVL3 is NOT
+# yet officially supported by Unsloth's FastVisionModel — see open issues
+# unslothai/unsloth#2341 and #3401. Loading only works through the
+# `auto_model: AutoModel` workaround set below, and is reported to be flaky
+# (load failures / OOM on some setups). Pair with
+# config/backend/unsloth_qlora_internvl3.yaml and verify a few training steps
+# actually run before committing to a full run.
+name: "unsloth/InternVL3-8B"
+model_name: "unsloth/InternVL3-8B"
+unsloth_name: "unsloth/InternVL3-8B"
+trust_remote_code: true
+torch_dtype: "bfloat16"
+device_map: "auto"
+attn_implementation: "flash_attention_2"
+gradient_checkpointing: true
+max_seq_length: 2048
+
+# Workaround for unsloth#3401: InternVLChatConfig is not registered with
+# AutoModelForImageTextToText, so FastVisionModel cannot resolve the
+# architecture on its own. Telling it to use AutoModel (+ trust_remote_code)
+# lets the InternVL remote code load. Set unsloth_force_compile=true to attempt
+# re-enabling the optimizations that trust_remote_code disables.
+auto_model: "AutoModel"
+unsloth_force_compile: false
+
+# NOTE: InternVL uses dynamic 448px tiling, NOT Qwen's min_pixels/max_pixels
+# patch mechanism, so no `processor:` resolution override is set here — the
+# processor returned by FastVisionModel is used as-is.
+
+prompt:
+  system: "You are an expert coin analyst."
+  user: "Analyze the coin image and extract year and mint mark. Return JSON: {\"year\": \"YYYY\", \"mint_mark\": \"X\"}"
+  response_format: "json"
+  response_template:
+    year: "{year}"
+    mint_mark: "{mint_mark}"
+  # InternVL3-8B's language backbone is Qwen2.5, so it uses the ChatML template.
+  assistant_start_token: "<|im_start|>assistant"
