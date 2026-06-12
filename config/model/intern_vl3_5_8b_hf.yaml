@@ -1,0 +1,41 @@
+# InternVL3.5-8B — NATIVE transformers format (RECOMMENDED InternVL path).
+#
+# Repo: `OpenGVLab/InternVL3_5-8B-HF` (note: underscore "3_5", uppercase "-HF").
+# This is the transformers-native release (InternVLForConditionalGeneration via
+# AutoModelForImageTextToText, requires transformers>=4.52.1 — we run 5.5). It
+# avoids BOTH InternVL blockers we hit:
+#   - unsloth not supporting InternVL (unslothai/unsloth#2341, #3401)
+#   - the remote-code `.item()`-on-meta crash (OpenGVLab/InternVL#1254)
+#
+# Backbone is Qwen3-8B, so the language LoRA targets in
+# config/backend/hf_peft_lora.yaml (q/k/v/o/gate/up/down_proj) apply unchanged.
+# Use with the hf_peft backend; do NOT use the unsloth backend with this config.
+name: "OpenGVLab/InternVL3_5-8B-HF"
+model_name: "OpenGVLab/InternVL3_5-8B-HF"
+# Native impl — force the built-in transformers class (meta-init safe). Leaving
+# this false avoids loading remote code, which is what reintroduces the meta
+# crash. The hf_peft loader falls back to AutoModel if the native class can't
+# resolve the config.
+trust_remote_code: false
+torch_dtype: "bfloat16"
+device_map: "auto"
+# FA2 was reported broken on the training box; native InternVL supports SDPA.
+# Switch to "flash_attention_2" once FA2 is installed correctly.
+attn_implementation: "sdpa"
+gradient_checkpointing: true
+max_seq_length: 2048
+
+# NOTE: InternVL uses dynamic 448px tiling, not Qwen's min_pixels/max_pixels —
+# the global `processor:` block in inference.yaml is a harmless no-op here.
+
+prompt:
+  system: "You are an expert coin analyst."
+  user: "Analyze the coin image and extract year and mint mark. Return JSON: {\"year\": \"YYYY\", \"mint_mark\": \"X\"}"
+  response_format: "json"
+  response_template:
+    year: "{year}"
+    mint_mark: "{mint_mark}"
+  # Qwen3 backbone → ChatML template. enable_thinking (if the template exposes
+  # it) is handled by the collator's safe_template_kwargs — forwarded as False
+  # for direct-JSON training, skipped if the template doesn't declare it.
+  assistant_start_token: "<|im_start|>assistant"

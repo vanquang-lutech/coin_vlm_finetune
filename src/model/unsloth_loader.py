@@ -23,44 +23,11 @@ class UnslothModelLoader(BaseModelLoader):
         processor_config = self.config.get("processor", None)
         if processor_config is None:
             processor_config = self.config.model.get("processor", None)
-        from_pretrained_kwargs = dict(
-            load_in_4bit = model_config.get("load_in_4bit", False),
-            use_gradient_checkpointing = "unsloth",
-        )
-
-        # Models whose config class is not registered with the default
-        # AutoModelForImageTextToText mapping (e.g. InternVL's InternVLChatConfig)
-        # must be loaded through an explicit auto class. See unsloth issue #3401:
-        # passing auto_model + trust_remote_code lets FastVisionModel resolve the
-        # architecture via the model's remote code.
-        auto_model_name = model_config.get("auto_model", None)
-        if auto_model_name:
-            import transformers
-            auto_model_cls = getattr(transformers, auto_model_name, None)
-            if auto_model_cls is None:
-                raise ValueError(
-                    f"model.auto_model='{auto_model_name}' is not a class exported "
-                    "by transformers (expected e.g. 'AutoModel' or "
-                    "'AutoModelForImageTextToText')."
-                )
-            from_pretrained_kwargs["auto_model"] = auto_model_cls
-            from_pretrained_kwargs["trust_remote_code"] = model_config.get(
-                "trust_remote_code", True
-            )
-            from_pretrained_kwargs["unsloth_force_compile"] = model_config.get(
-                "unsloth_force_compile", False
-            )
-            logger.info(
-                "Loading via auto_model=%s (trust_remote_code=%s, force_compile=%s)",
-                auto_model_name,
-                from_pretrained_kwargs["trust_remote_code"],
-                from_pretrained_kwargs["unsloth_force_compile"],
-            )
-
         logger.info("Loading Unsloth model repo: %s", unsloth_name)
         model, processor = FastVisionModel.from_pretrained(
             unsloth_name,
-            **from_pretrained_kwargs,
+            load_in_4bit = model_config.get("load_in_4bit", False),
+            use_gradient_checkpointing = "unsloth",
         )
 
         self.processor = processor
@@ -139,28 +106,19 @@ class UnslothModelLoader(BaseModelLoader):
         logger.info(
             "Applying Unsloth LoRA Adapter (r=%d)...", lora_config.r
         )
-        peft_kwargs = dict(
-            finetune_vision_layers     = lora_config.get("finetune_vision_layers", True),
-            finetune_language_layers   = lora_config.get("finetune_language_layers", True),
-            finetune_attention_modules = lora_config.get("finetune_attention_modules", True),
-            finetune_mlp_modules       = lora_config.get("finetune_mlp_modules", True),
+        self.model = FastVisionModel.get_peft_model(
+            self.model,
+            finetune_vision_layers     = True,
+            finetune_language_layers   = True,
+            finetune_attention_modules = True,
+            finetune_mlp_modules       = True,
             r = lora_config.r,
             lora_alpha = lora_config.lora_alpha,
             lora_dropout = lora_config.lora_dropout,
+            target_modules = list(lora_config.target_modules),
             bias = lora_config.bias,
             use_gradient_checkpointing = lora_config.use_gradient_checkpointing,
             random_state = self.config.training.get("seed", 42),
             use_rslora = False,  # We support rank stabilized LoRA
             loftq_config = None, # And LoftQ
         )
-
-        # target_modules is optional. When omitted, Unsloth auto-selects the
-        # linear layers to adapt based on the finetune_* flags above. This is
-        # required for InternVL, whose vision/projector module names differ from
-        # Qwen's — passing the Qwen target lists would error with "target modules
-        # not found". Qwen configs still pass an explicit list.
-        target_modules = lora_config.get("target_modules", None)
-        if target_modules:
-            peft_kwargs["target_modules"] = list(target_modules)
-
-        self.model = FastVisionModel.get_peft_model(self.model, **peft_kwargs)
