@@ -26,6 +26,13 @@ class HFPeftModelLoader(BaseModelLoader):
 
         quant_config = model_config.get("quantization", None)
         if quant_config:
+            from omegaconf import OmegaConf
+
+            # Convert to native python containers: OmegaConf yields ListConfig
+            # for YAML lists, but BitsAndBytesConfig does a strict
+            # isinstance(..., list) check (e.g. on llm_int8_skip_modules) and
+            # rejects ListConfig with "must be a list of strings".
+            quant_config = OmegaConf.to_container(quant_config, resolve=True)
             kwargs["quantization_config"] = BitsAndBytesConfig(**quant_config)
         elif model_config.get("load_in_4bit", False):
             kwargs["load_in_4bit"] = True
