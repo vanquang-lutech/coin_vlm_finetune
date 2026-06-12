@@ -1,6 +1,7 @@
 model:
   backend: "hf_peft"
-  load_in_4bit: true
+  # 4-bit is configured via the `quantization` block below (the loader prefers
+  # it over this flag), so no top-level load_in_4bit is needed here.
 
   lora:
     r: 16
@@ -22,6 +23,12 @@ model:
     bnb_4bit_compute_dtype: "bfloat16"
     bnb_4bit_quant_type: "nf4"
     bnb_4bit_use_double_quant: true
+    # Keep the vision encoder, the multimodal projector and the LM head OUT of
+    # 4-bit so fine-grained visual detail (coin year / mint mark) isn't degraded
+    # — matches the project's "quantize only the LM" stance (see exporter.py).
+    # These are InternVL's native module names; for other VLMs (e.g. Qwen) they
+    # simply don't match, so this is a harmless no-op there.
+    llm_int8_skip_modules: ["vision_tower", "multi_modal_projector", "lm_head"]
 
 training:
   backend: "hf_peft"
