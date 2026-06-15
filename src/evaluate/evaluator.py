@@ -118,6 +118,8 @@ class CoinEvaluator:
     def evaluate(self, dataset) -> dict:
         logger.info("Running evaluation on %d samples...", len(dataset))
 
+        self._raise_recompile_limits()
+
         dataloader = DataLoader(
             dataset,
             batch_size = self.config.training.per_device_eval_batch_size,
@@ -238,6 +240,45 @@ class CoinEvaluator:
         return model, processor
 
 
+    @staticmethod
+    def _raise_recompile_limits() -> None:
+        """Lift Dynamo's recompile ceilings so generation eval can't trip
+        FailOnRecompileLimitHit, and LEAVE them lifted for the rest of the run.
+
+        Qwen3.5's Gated DeltaNet compiles `causal_conv1d_update` with fullgraph
+        (one_graph=True), and Unsloth's fast-generate routes through that compiled
+        path -- it ignores the `set_stance("force_eager")` guard in _generate.
+        Eval images vary 512-1280px, so each batch is a fresh sequence length =>
+        one recompile per batch. The process-global accumulated counter trips the
+        default limit (256) partway through eval -> FailOnRecompileLimitHit.
+
+        Why raise-and-keep, never restore: eval permanently bumps the global
+        accumulated-recompile counter, and the only thing that resets it
+        (torch._dynamo.reset) also evicts the warm TRAINING graphs and triggers
+        the RMSNorm/grad-checkpoint weakref crash documented in _generate. So we
+        can't lower the ceiling back without risking that the next training
+        recompile dies under it. A ceiling is just a threshold -- raising it never
+        clears a graph -- so it is safe for training to keep running under.
+        """
+        try:
+            import torch._dynamo as _dynamo
+        except Exception:  # noqa: BLE001
+            return
+        cfg = _dynamo.config
+        # New torch>=2.7 names + their legacy aliases; set whichever exist.
+        ceilings = {
+            "accumulated_recompile_limit": 1 << 30,
+            "accumulated_cache_size_limit": 1 << 30,
+            "recompile_limit": 1 << 16,
+            "cache_size_limit": 1 << 16,
+        }
+        for name, floor in ceilings.items():
+            if hasattr(cfg, name):
+                try:
+                    setattr(cfg, name, max(getattr(cfg, name), floor))
+                except Exception:  # noqa: BLE001
+                    pass
+
     def _generate(self, images: list, texts: list[str]) -> list[str]:
         generation_config = self.config.get("generation", {})
 
@@ -247,10 +288,18 @@ class CoinEvaluator:
         original_padding_side = self.processor.tokenizer.padding_side
         self.processor.tokenizer.padding_side = "left"
 
-        # Run generation in eager mode (skip torch.compile). Hybrid linear-attn
+        # Try to run generation eager (skip torch.compile). Hybrid linear-attn
         # models (Qwen3.5 Gated DeltaNet) compile causal_conv1d_update with
         # fullgraph=one_graph; every new prompt length recompiles and blows the
         # accumulated_recompile_limit mid-eval -> FailOnRecompileLimitHit.
+        #
+        # NOTE: this stance is only a best-effort secondary guard. Unsloth's
+        # fast-generate (FastVisionModel.for_inference) re-enters its OWN compiled
+        # path inside .generate() and ignores the outer force_eager stance, so on
+        # the unsloth backend the compile still happens -- the real safety net is
+        # _raise_recompile_limits() (called in evaluate()), which lets those
+        # recompiles proceed instead of crashing. The stance still helps non-unsloth
+        # backends (hf_peft/full) that don't route through a compiled generate.
         #
         # IMPORTANT: use torch.compiler.set_stance("force_eager"), NOT a
         # `torch._dynamo.config.disable` toggle. Mutating dynamo config
