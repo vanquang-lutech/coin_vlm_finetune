@@ -1,0 +1,27 @@
+# PaliGemma 2 — 3B backbone @ 448px (LIGHT option: fastest train + simplest serve).
+#
+# Repo: `google/paligemma2-3b-pt-448` (GATED). Gemma-2 2B decoder + SigLIP.
+# 448px -> 1024 image tokens. Less accurate than 10b, but trains very fast and is
+# small enough to SERVE IN bf16 (no W4A16 export step): a merged 3b is ~6GB, which
+# fits a 24GB 3090 with room for KV cache. Worth an A/B vs 10b-448 if throughput /
+# operational simplicity matters more than the last few accuracy points.
+#
+# Pair with config/backend/hf_peft_lora_paligemma_448.yaml (QLoRA). If you'd
+# rather train bf16-LoRA and serve unquantized, drop the `quantization:` block
+# from that backend (3b easily fits A100-40GB in bf16) and skip `export.py --mode awq`.
+name: "google/paligemma2-3b-pt-448"
+model_name: "google/paligemma2-3b-pt-448"
+trust_remote_code: false
+torch_dtype: "bfloat16"
+device_map: "auto"
+# 448/1024 tokens -> eager fits trivially and honours Gemma-2 soft-capping.
+attn_implementation: "eager"
+gradient_checkpointing: true
+
+prompt_style: "prefix_suffix"
+prompt:
+  prefix: "extract year and mint mark"
+  response_format: "json"
+  response_template:
+    year: "{year}"
+    mint_mark: "{mint_mark}"

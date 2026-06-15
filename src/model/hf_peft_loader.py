@@ -69,11 +69,20 @@ class HFPeftModelLoader(BaseModelLoader):
             "Applying HF PEFT LoRA adapter (r=%d)...", lora_config.r
         )
 
+        # target_modules may be a list of layer-name suffixes (matched with
+        # endswith) OR a single regex string (matched with re.fullmatch by PEFT).
+        # The regex form lets PaliGemma scope LoRA to the language model only —
+        # a bare list like ["q_proj", ...] would also match the SigLIP vision
+        # tower's q/k/v_proj and unintentionally adapt the (normally frozen)
+        # vision encoder.
+        tm = lora_config.target_modules
+        target_modules = tm if isinstance(tm, str) else list(tm)
+
         lora_config = LoraConfig(
             r = lora_config.r,
             lora_alpha = lora_config.lora_alpha,
             lora_dropout= lora_config.lora_dropout,
-            target_modules = list(lora_config.target_modules),
+            target_modules = target_modules,
             bias = lora_config.bias,
             task_type = lora_config.task_type,
         )

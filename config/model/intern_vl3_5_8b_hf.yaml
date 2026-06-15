@@ -10,8 +10,12 @@
 # Backbone is Qwen3-8B, so the language LoRA targets in
 # config/backend/hf_peft_lora.yaml (q/k/v/o/gate/up/down_proj) apply unchanged.
 # Use with the hf_peft backend; do NOT use the unsloth backend with this config.
-name: "OpenGVLab/InternVL3_5-8B-HF"
-model_name: "OpenGVLab/InternVL3_5-8B-HF"
+# Local copy of OpenGVLab/InternVL3_5-8B-HF (native HF format, all 4 shards
+# present). Pointing at a local dir means from_pretrained loads straight from
+# disk — no Hub download. To run on a box with egress, set these back to the
+# Hub id "OpenGVLab/InternVL3_5-8B-HF".
+name: "/data/coin/coin_vlm_finetune/data/models/InternVL3.5-8B-HF"
+model_name: "/data/coin/coin_vlm_finetune/data/models/InternVL3.5-8B-HF"
 # Native impl — force the built-in transformers class (meta-init safe). Leaving
 # this false avoids loading remote code, which is what reintroduces the meta
 # crash. The hf_peft loader falls back to AutoModel if the native class can't
@@ -27,6 +31,13 @@ max_seq_length: 2048
 
 # NOTE: InternVL uses dynamic 448px tiling, not Qwen's min_pixels/max_pixels —
 # the global `processor:` block in inference.yaml is a harmless no-op here.
+
+# Cap InternVL dynamic tiling. Default max_patches=12 → up to 12 tiles × 256 =
+# 3072 image tokens, which overflows max_seq_length=2048 and trips the
+# processor's image-token-count check after truncation. 6 tiles (+thumbnail) ≈
+# 1792 tokens fits comfortably under 2048 while keeping good resolution for
+# small mint marks. Raise this (and max_seq_length) if you need finer detail.
+image_max_patches: 6
 
 prompt:
   system: "You are an expert coin analyst."

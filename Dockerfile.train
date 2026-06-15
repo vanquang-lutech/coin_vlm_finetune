@@ -1,0 +1,53 @@
+# Training/eval image for the coin VLM (torch 2.8 + cu128 + unsloth).
+#
+# SEPARATE from the serving image (Dockerfile): the train stack (torch 2.8 +
+# unsloth + trl) and the serve stack (vLLM) have conflicting deps, so they are
+# two containers that only meet at the MLflow Model Registry. See docs/mlops.md.
+#
+# Data, base-model weights and outputs are NOT baked in; mount them at runtime.
+# Build on a host that can reach PyPI + download.pytorch.org.
+#
+# Build (on the GPU server, tag by git commit for lineage):
+#   docker build -f Dockerfile.train -t coin-vlm-train:$(git rev-parse --short HEAD) .
+#
+# Run (GPU 3, project + outputs mounted, env from .env, MLflow reachable):
+#   docker run --rm --gpus '"device=3"' \
+#     -v /data/coin/coin_vlm_finetune:/app \
+#     --env-file .env \
+#     coin-vlm-train:<sha>
+FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+# git           -> lineage capture (run_metadata.json) reads git commit at train time
+# build-essential -> a few train deps may build from source
+# libglib2.0-0/libgomp1 -> opencv + OpenMP runtime
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3 python3-pip python3-dev \
+        build-essential git \
+        libglib2.0-0 libgomp1 \
+    && ln -sf /usr/bin/python3 /usr/bin/python \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# 1) Pinned training env (torch 2.8 + cu128 wheels via the pytorch index).
+#    constraints.txt locks the full resolved set captured from the server.
+COPY requirements.txt constraints.txt ./
+RUN python -m pip install --upgrade pip \
+ && python -m pip install -r requirements.txt -c constraints.txt \
+        --extra-index-url https://download.pytorch.org/whl/cu128
+
+# 2) Project as an editable package (deps already installed above → --no-deps).
+COPY pyproject.toml README.md Makefile ./
+COPY src ./src
+COPY scripts ./scripts
+COPY config ./config
+RUN python -m pip install -e . --no-deps
+
+# NOT set offline: training pulls the dataset (and possibly the base model) from
+# HF Hub. Default runs the CT pipeline (train + test-eval, then gate+register).
+# Override the command for `make train` only, `make eval`, a different config, etc.
+CMD ["make", "all"]

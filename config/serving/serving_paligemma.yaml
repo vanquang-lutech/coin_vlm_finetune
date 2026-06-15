@@ -1,0 +1,61 @@
+# vLLM serving config for PaliGemma 2 (10B @ 896px) on a single RTX 3090 (24GB).
+#
+# Points at the W4A16 (compressed-tensors) checkpoint produced by
+# scripts/export.py --mode awq (which uses GPTQ for PaliGemma). A merged bf16
+# 10B (~20GB) does NOT leave room for the 4096-token KV cache on 24GB, so serve
+# the quantized dir. The prompt/generation defaults still come from
+# inference.yaml; for PaliGemma the engine sends the bare prefix (no chat template).
+#
+# Gemma-2 soft-capping: if vLLM raises
+#   "This flash attention build does not support tanh softcapping"
+# install flashinfer and launch with VLLM_ATTENTION_BACKEND=FLASHINFER.
+serving:
+  # Path to the GPTQ-W4A16 (compressed-tensors) checkpoint. The vision tower +
+  # multi_modal_projector + lm_head are kept bf16 (set in the export ignore list).
+  model_path: "/data/coin/coin_vlm_finetune/data/models/paligemma2-10b-896-coin-w4a16"
+
+  # null -> vLLM auto-detects compressed-tensors from config.json. Do NOT force
+  # "awq": llm-compressor saves compressed-tensors, and forcing the AutoAWQ
+  # loader fails.
+  quantization: null
+
+  dtype: "auto"
+  # Must cover the image tokens + prefix + generated tokens. Keep it tight: it
+  # bounds KV-cache allocation, the scarce resource on 24GB.
+  #   896px (4096 image tokens) -> 4608   |   448px (1024 image tokens) -> 1280
+  max_model_len: 4608
+  # Dedicated 3090 -> give vLLM most of the card (the shared-box serving.yaml
+  # used 0.25). Drop if you hit OOM during KV allocation.
+  gpu_memory_utilization: 0.90
+  # Each 896 request is a heavy ~4096-token prefill; keep concurrency low.
+  # At 448 (1024 tokens) you can raise this (e.g. max_num_seqs: 8).
+  max_num_seqs: 2
+  trust_remote_code: true
+  limit_mm_per_prompt_image: 1
+  tensor_parallel_size: 1
+  # CUDA graphs are fine; set true only if you need to claw back a little VRAM.
+  enforce_eager: false
+  seed: 42
+
+  # Image preprocessing MUST match the training dataset build (CLAHE + unsharp),
+  # same as the Qwen serving config — train/serve skew otherwise hurts accuracy.
+  preprocess:
+    enhance: true
+    mode: "full"
+    clahe_clip_limit: 2.0
+    clahe_tile_size: [8, 8]
+    unsharp_sigma: 2.0
+    unsharp_amount: 1.5
+    contrast_threshold: 50.0
+    sharpness_threshold: 600.0
+
+  host: "0.0.0.0"
+  port: 49710
+  ngrok:
+    enabled: false
+    domain: "embezzle-eastcoast-armoire.ngrok-free.dev"
+    authtoken: null
+    binary_path: null
+  log_dir: "outputs/logs/serving"
+  log_rotation: "daily"
+  predictions_log: true

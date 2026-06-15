@@ -119,10 +119,114 @@ def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(name)
  
  
-def init_wandb(cfg: DictConfig) -> None:
-    if cfg.training.report_to != "wandb":
+def report_to_list(report_to) -> list[str]:
+    """Normalize a ``report_to`` config (str | list | None) to a plain list of
+    backend names. ``none``/``null``/``""`` -> ``[]``. Handles OmegaConf
+    ListConfig so it can be passed straight to TrainingArguments."""
+    if report_to is None:
+        return []
+    if isinstance(report_to, str):
+        return [] if report_to.lower() in ("none", "null", "") else [report_to]
+    try:
+        return [str(x) for x in report_to]
+    except TypeError:
+        return []
+
+
+def log_metrics(metrics: dict, step: int | None = None) -> None:
+    """Log scalar metrics to whichever trackers are active (W&B + MLflow).
+
+    Single place for hybrid logging — call this instead of ``wandb.log`` so
+    both backends stay in sync. Non-scalar values are skipped for MLflow.
+    Never raises.
+    """
+    try:
+        import wandb
+        if wandb.run is not None:
+            wandb.log(metrics, step=step)
+    except Exception:  # noqa: BLE001 - logging must never crash training
+        pass
+    try:
+        import mlflow
+        if mlflow.active_run() is not None:
+            scalars = {
+                k: float(v)
+                for k, v in metrics.items()
+                if isinstance(v, (int, float)) and not isinstance(v, bool)
+            }
+            if scalars:
+                mlflow.log_metrics(scalars, step=step)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def init_mlflow(cfg: DictConfig) -> None:
+    """Start an MLflow run + attach lineage, when "mlflow" is in report_to.
+
+    The HF MLflowCallback (enabled via report_to) logs per-step metrics and
+    TrainingArguments params automatically and REUSES this active run. Here we
+    only add what the callback doesn't: a named run, lineage tags (git/data),
+    and the full merged config as an artifact (logged as an artifact, not
+    params, to avoid name clashes with the callback). Never raises.
+    """
+    if "mlflow" not in report_to_list(cfg.training.get("report_to", None)):
         return
- 
+
+    try:
+        import mlflow
+    except ImportError:
+        get_logger(__name__).warning(
+            "mlflow not installed; skipping MLflow init. Run: pip install mlflow-skinny"
+        )
+        return
+
+    try:
+        tracking_uri = os.getenv("MLFLOW_TRACKING_URI")
+        if tracking_uri:
+            mlflow.set_tracking_uri(tracking_uri)
+        experiment = (
+            os.getenv("MLFLOW_EXPERIMENT_NAME")
+            or cfg.training.get("mlflow_experiment", "coin-vlm-finetune")
+        )
+        mlflow.set_experiment(experiment)
+
+        if mlflow.active_run() is None:
+            mlflow.start_run(run_name=cfg.training.get("run_name", None))
+
+        from .lineage import collect_lineage  # local import: avoid import cycle
+        lin = collect_lineage(cfg)
+        tags = {
+            "git_commit": lin.get("git_commit"),
+            "git_branch": lin.get("git_branch"),
+            "git_dirty": lin.get("git_dirty"),
+            "hf_dataset_name": lin.get("hf_dataset_name"),
+            "hf_revision": lin.get("hf_revision"),
+            "host": lin.get("host"),
+        }
+        mlflow.set_tags({k: str(v) for k, v in tags.items() if v is not None})
+        mlflow.log_dict(lin.get("config", {}), "config.json")
+
+        get_logger(__name__).info(
+            "MLflow run started (experiment=%s, uri=%s)",
+            experiment, tracking_uri or "default",
+        )
+    except Exception:  # noqa: BLE001
+        get_logger(__name__).exception("MLflow init failed; continuing without it.")
+
+
+def finish_mlflow() -> None:
+    try:
+        import mlflow
+        if mlflow.active_run() is not None:
+            mlflow.end_run()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def init_wandb(cfg: DictConfig) -> None:
+    if "wandb" not in report_to_list(cfg.training.get("report_to", None)):
+        return
+
     try:
         import wandb
         wandb_api_key = os.getenv("WANDB_API_KEY")

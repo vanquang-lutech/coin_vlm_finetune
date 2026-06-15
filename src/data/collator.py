@@ -3,7 +3,7 @@ import logging
 from typing import Any
 import torch
 
-from src.utils import safe_template_kwargs
+from src.utils import safe_template_kwargs, is_prefix_suffix, resolve_prefix
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +13,15 @@ class CoinDataCollator:
         self.processor = processor
         self.config = config
         self.prompt = self._resolve_prompt()
+        # PaliGemma-style models bypass chat templating entirely (see
+        # _call_prefix_suffix). Resolve the fixed prefix once here.
+        self.prefix_suffix = is_prefix_suffix(config)
+        if self.prefix_suffix:
+            self.prefix_text = resolve_prefix(config)
+            logger.info(
+                "[Collator] prefix_suffix mode (PaliGemma). prefix=%r",
+                self.prefix_text,
+            )
         # `enable_thinking` is a Qwen3 text / *-Thinking* chat-template variable.
         # Templates that don't actually read it (Qwen3-VL-Instruct, Qwen2.5,
         # InternVL3) make transformers>=5.4 warn on every apply_chat_template
@@ -51,6 +60,9 @@ class CoinDataCollator:
             )
 
     def __call__(self, batch: list[dict]) -> dict[str, Any]:
+        if self.prefix_suffix:
+            return self._call_prefix_suffix(batch)
+
         images = [item["image"] for item in batch]
         labels = [item["label"] for item in batch]
 
@@ -138,6 +150,63 @@ class CoinDataCollator:
         )
 
         return inputs
+
+    def _call_prefix_suffix(self, batch: list[dict]) -> dict[str, Any]:
+        """PaliGemma-style collation (prefix/suffix, no chat template).
+
+        PaliGemma 2 is not a chat model: it ships no chat template and expects
+        the prefix prompt as ``text`` and the target answer as ``suffix``. The
+        processor expands ``<image>`` tokens, prepends ``<bos>``, appends
+        ``<eos>`` to the suffix, and returns a ``labels`` tensor where the image
+        tokens + prefix are ALREADY masked to -100 (via ``token_type_ids``). So
+        we do no manual masking and no apply_chat_template here.
+        """
+        images = [item["image"] for item in batch]
+        labels = [item["label"] for item in batch]
+
+        prefixes = [self.prefix_text] * len(images)
+        suffixes = [self._build_response(label) for label in labels]
+
+        # No truncation on purpose: each image expands to a FIXED number of
+        # image tokens (896px -> 4096). Truncating would cut image tokens and
+        # trip PaliGemma's image-token-count assertion. The suffix (short JSON)
+        # never needs truncation. Set training.max_seq_length high enough that
+        # the model's position budget covers image_seq_length + prefix + suffix.
+        inputs = self.processor(
+            images=images,
+            text=prefixes,
+            suffix=suffixes,
+            return_tensors="pt",
+            padding=True,
+        )
+
+        if "labels" not in inputs:
+            raise RuntimeError(
+                "PaliGemma processor returned no `labels`. Expected the "
+                "processor to build labels when `suffix=` is given (via "
+                "token_type_ids). Check transformers/processor version."
+            )
+
+        self._log_prefix_suffix_debug_once(inputs)
+        return inputs
+
+    def _log_prefix_suffix_debug_once(self, inputs: dict[str, Any]) -> None:
+        """One-time sanity log: confirm only the suffix carries loss."""
+        if getattr(self, "_mask_debug_done", False):
+            return
+        self._mask_debug_done = True
+        labels0 = inputs["labels"][0]
+        n_total = int(labels0.shape[0])
+        n_trained = int(labels0.ne(-100).sum().item())
+        trained_ids = inputs["input_ids"][0][labels0.ne(-100)]
+        decoded = self.processor.tokenizer.decode(
+            trained_ids, skip_special_tokens=True
+        )
+        logger.info(
+            "[PaliGemma Collation] Total tokens: %d | Ignored (image+prefix/pad): "
+            "%d | Trained (suffix): %d | prefix=%r | suffix preview: '%s'",
+            n_total, n_total - n_trained, n_trained, self.prefix_text, decoded[:200],
+        )
 
     def _build_messages(self, label: dict) -> list[dict]:
 

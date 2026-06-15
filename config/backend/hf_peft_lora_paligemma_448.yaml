@@ -1,0 +1,46 @@
+# QLoRA backend for PaliGemma 2 @ 448px (hf_peft + 4-bit NF4).
+# Use with paligemma2_10b_448.yaml or paligemma2_3b_448.yaml:
+#   make train MODEL=config/model/paligemma2_10b_448.yaml \
+#              BACKEND=config/backend/hf_peft_lora_paligemma_448.yaml
+#
+# Same LM-scoped LoRA + quant as hf_peft_lora_paligemma.yaml (the 896 backend);
+# only the training memory settings differ — 448 (1024 image tokens) is ~4x
+# lighter than 896, so we run a real batch instead of bs=1.
+model:
+  backend: "hf_peft"
+
+  lora:
+    r: 16
+    lora_alpha: 32
+    lora_dropout: 0.05
+    # Regex (PEFT re.fullmatch) scoping LoRA to the Gemma-2 language model only,
+    # leaving the SigLIP vision tower frozen. Same as the 896 backend.
+    target_modules: '.*language_model.*\.(q_proj|k_proj|v_proj|o_proj|gate_proj|up_proj|down_proj)$'
+    bias: "none"
+    task_type: "CAUSAL_LM"
+
+  quantization:
+    load_in_4bit: true
+    bnb_4bit_compute_dtype: "bfloat16"
+    bnb_4bit_quant_type: "nf4"
+    bnb_4bit_use_double_quant: true
+    # Keep vision tower + projector + LM head OUT of 4-bit (fine visual detail).
+    # NOTE: for the 3b variant you may prefer bf16-LoRA instead — just delete this
+    # whole `quantization:` block; 3b fits A100-40GB in bf16 and serves bf16.
+    llm_int8_skip_modules: ["vision_tower", "multi_modal_projector", "lm_head"]
+
+training:
+  backend: "hf_peft"
+  # 448 = 1024 image tokens/sample. bs=4 (~4096 tokens/step) ≈ the memory of
+  # bs=1 at 896, which fits A100-40GB. Raise further for 3b (much smaller LM).
+  per_device_train_batch_size: 4
+  per_device_eval_batch_size: 4
+  gradient_accumulation_steps: 2        # effective batch ~8
+  # Sanity ceiling only — the PaliGemma collator never truncates. Covers
+  # image_seq_length(1024) + prefix + suffix.
+  max_seq_length: 2048
+  # 448 eval is ~4x cheaper than 896, so afford more eval samples for tighter
+  # metric estimates.
+  generation_eval:
+    enabled: true
+    max_samples: 256

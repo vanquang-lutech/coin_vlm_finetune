@@ -1,0 +1,45 @@
+# MLflow stack: PostgreSQL backend store + MLflow tracking/registry server.
+# Artifacts live on the NAS (mounted into the mlflow container, served via
+# --serve-artifacts so clients upload through the server).
+#
+# Prereqs: set MLFLOW_DB_PW in .env; ensure /data/mlflow and the NAS path exist
+# on the server.
+#
+# Run (on the GPU server):
+#   docker compose -f docker-compose.mlflow.yml up -d
+# UI: http://<server-host>:5000
+services:
+  mlflow-db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mlflow
+      POSTGRES_PASSWORD: ${MLFLOW_DB_PW:?set MLFLOW_DB_PW in .env}
+      POSTGRES_DB: mlflow
+    volumes:
+      - /data/mlflow/pgdata:/var/lib/postgresql/data    # Postgres data on local SSD
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mlflow -d mlflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mlflow:
+    build:
+      context: .
+      dockerfile: Dockerfile.mlflow
+    image: coin-vlm-mlflow:latest
+    restart: unless-stopped
+    depends_on:
+      mlflow-db:
+        condition: service_healthy
+    command: >
+      mlflow server
+      --backend-store-uri postgresql://mlflow:${MLFLOW_DB_PW}@mlflow-db:5432/mlflow
+      --artifacts-destination /mnt/nas/coin/mlflow-artifacts
+      --serve-artifacts
+      --host 0.0.0.0 --port 5000
+    ports:
+      - "5000:5000"
+    volumes:
+      - /mnt/nas/coin/mlflow-artifacts:/mnt/nas/coin/mlflow-artifacts    # NAS artifact store

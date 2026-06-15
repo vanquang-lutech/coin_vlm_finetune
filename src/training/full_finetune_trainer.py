@@ -1,5 +1,5 @@
 from transformers import Trainer, TrainingArguments
-from src.utils import get_logger
+from src.utils import get_logger, report_to_list
 from src.data.collator import CoinDataCollator
 from .base import BaseTrainer
 
@@ -32,7 +32,7 @@ class FullFinetuneTrainer(BaseTrainer):
             load_best_model_at_end= training_config.load_best_model_at_end,
             metric_for_best_model= training_config.metric_for_best_model,
             logging_steps= training_config.logging_steps,
-            report_to= training_config.report_to,
+            report_to= report_to_list(training_config.report_to),
             run_name= training_config.run_name,
             dataloader_num_workers= training_config.dataloader_num_workers,
             dataloader_pin_memory= training_config.dataloader_pin_memory,

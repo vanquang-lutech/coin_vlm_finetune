@@ -4,13 +4,14 @@ import torch
 from PIL import Image
 
 from src.evaluate.metrics import parse_response
-from src.utils import safe_template_kwargs
+from src.utils import safe_template_kwargs, is_prefix_suffix, resolve_prefix
 
 logger = logging.getLogger(__name__)
 
 class CoinPredictor:
     def __init__(self, config, model=None, processor=None, checkpoint_path=None):
-        self.config = config 
+        self.config = config
+        self.prefix_suffix = is_prefix_suffix(config)
         if model is not None and processor is not None:
             self.model = model
             self.processor = processor
@@ -30,6 +31,10 @@ class CoinPredictor:
         checkpoint dir so inference resolution matches the configured eval
         setting (not whatever was saved at training time)."""
         if processor is None:
+            return
+        if self.prefix_suffix:
+            # PaliGemma: fixed square resolution baked into the checkpoint; no
+            # min/max_pixels to override.
             return
         processor_config = self.config.get("processor", None)
         if processor_config is None:
@@ -56,13 +61,7 @@ class CoinPredictor:
 
     def predict(self, image):
         pil_image = self._load_image(image)
-        messages = self._build_messages()
-        text = self.processor.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-            **safe_template_kwargs(self.processor, {"enable_thinking": False}),
-        )
+        text = self._build_prompt_text()
 
         response = self._generate([pil_image], [text])[0]
         parsed = parse_response(response)
@@ -75,16 +74,10 @@ class CoinPredictor:
     
     def predict_batch(self, images, batch_size):
         results = []
+        text = self._build_prompt_text()
         for i in range(0, len(images), batch_size):
             batch_images = images[i : i + batch_size]
             pil_images = [self._load_image(img) for img in batch_images]
-            text = self.processor.apply_chat_template(
-                self._build_messages(),
-                tokenize=False,
-                add_generation_prompt=True,
-                **safe_template_kwargs(self.processor, {"enable_thinking": False}),
-            )
-
             texts = [text] * len(pil_images)
             responses = self._generate(pil_images, texts)
 
@@ -171,6 +164,22 @@ class CoinPredictor:
             raise FileNotFoundError(f"Image not found: {image}")
         return Image.open(path).convert("RGB")
     
+    def _build_prompt_text(self) -> str:
+        """The generation prompt fed to the processor as `text`.
+
+        For PaliGemma (prefix_suffix) this is the bare prefix the model was
+        trained on — no chat roles, no generation prompt. For chat models it is
+        the rendered chat template with the assistant turn opened.
+        """
+        if self.prefix_suffix:
+            return resolve_prefix(self.config)
+        return self.processor.apply_chat_template(
+            self._build_messages(),
+            tokenize=False,
+            add_generation_prompt=True,
+            **safe_template_kwargs(self.processor, {"enable_thinking": False}),
+        )
+
     def _build_messages(self):
         prompt = self._resolve_prompt()
         return [

@@ -57,14 +57,25 @@ class BaseModelLoader(ABC):
             processor_config = self.config.model.get("processor", None)
         processor = AutoProcessor.from_pretrained(self.config.model.name)
 
-        if processor_config is not None:
-            processor.image_processor.min_pixels = processor_config.min_pixels * 28 * 28
-            processor.image_processor.max_pixels = processor_config.max_pixels * 28 * 28
+        img_proc = getattr(processor, "image_processor", None)
+        has_min_pixels = img_proc is not None and hasattr(img_proc, "min_pixels")
+
+        if processor_config is not None and has_min_pixels:
+            img_proc.min_pixels = processor_config.min_pixels * 28 * 28
+            img_proc.max_pixels = processor_config.max_pixels * 28 * 28
 
             logger.info(
                 "Processor loaded. min_pixels=%d, max_pixels=%d",
                 processor_config.min_pixels,
                 processor_config.max_pixels,
+            )
+        elif processor_config is not None:
+            # Fixed-resolution models (e.g. PaliGemma's SigLIP processor) have no
+            # min_pixels/max_pixels; resolution is baked into the checkpoint. The
+            # global inference.yaml `processor:` block is then a harmless no-op.
+            logger.info(
+                "Processor has no min_pixels/max_pixels (fixed-resolution model); "
+                "ignoring processor.min_pixels/max_pixels config."
             )
         else:
             logger.info("Processor loaded with default image processor settings.")

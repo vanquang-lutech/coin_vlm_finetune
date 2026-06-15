@@ -22,7 +22,7 @@ from PIL import Image
 
 from src.data.preprocessing import from_config as build_enhancer
 from src.evaluate.metrics import parse_response
-from src.utils import get_logger, safe_template_kwargs
+from src.utils import get_logger, safe_template_kwargs, is_prefix_suffix, resolve_prefix
 
 logger = get_logger(__name__)
 
@@ -33,6 +33,7 @@ class VLLMCoinEngine:
         from vllm import AsyncLLMEngine, AsyncEngineArgs
 
         self.config = config
+        self.prefix_suffix = is_prefix_suffix(config)
         serving = config.serving
         model_path = serving.model_path
 
@@ -174,6 +175,11 @@ class VLLMCoinEngine:
 
         raw_pixels = token_count * (patch_size * merge_size) ** 2
         """
+        if self.prefix_suffix:
+            # PaliGemma: fixed square resolution; vLLM does its own preprocessing
+            # at the checkpoint's resolution. No min/max_pixels to forward.
+            logger.info("PaliGemma fixed-resolution model; no mm_processor_kwargs override.")
+            return {}
         processor_config = self.config.get("processor", None)
         if processor_config is None:
             processor_config = self.config.model.get("processor", None)
@@ -232,6 +238,12 @@ class VLLMCoinEngine:
         )
 
     def _build_prompt_text(self):
+        if self.prefix_suffix:
+            # PaliGemma: pass the BARE prefix. vLLM's PaliGemmaMultiModalProcessor
+            # inserts the <image>*N tokens, <bos>, and the trailing newline
+            # itself — the caller must NOT add them or call a chat template.
+            return resolve_prefix(self.config)
+
         prompt = self._resolve_prompt()
         messages = [
             {"role": "system", "content": prompt.system},

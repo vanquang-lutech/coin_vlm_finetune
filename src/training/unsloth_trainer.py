@@ -1,4 +1,4 @@
-from src.utils import get_logger
+from src.utils import get_logger, report_to_list
 from src.data.dataset import CoinDataset
 from src.data.collator import CoinDataCollator
 from .base import BaseTrainer
@@ -40,7 +40,7 @@ class UnslothTrainer(BaseTrainer):
             dataset_kwargs={"skip_prepare_dataset": True}, # handle data preparation in the Dataset class, so skip it in the trainer
             dataset_text_field="", # dataset will return dict with "image" and "label" keys, no need to specify text field
             max_seq_length = training_config.max_seq_length,
-            report_to= training_config.report_to,
+            report_to= report_to_list(training_config.report_to),
             run_name= training_config.run_name,
         )
     

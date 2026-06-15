@@ -48,8 +48,13 @@ generation_eval:
  
 # Logging
 logging_steps: 10
-report_to: "wandb"
+# Hybrid tracking: W&B (live monitoring) + MLflow (registry/lineage record).
+# transformers attaches WandbCallback + MLflowCallback for these. Use ["none"]
+# (or "none") in CI / smoke tests. MLflow needs mlflow-skinny + MLFLOW_* env.
+report_to: ["wandb", "mlflow"]
 run_name: "coin-vlm"
+# MLflow experiment (overridable via MLFLOW_EXPERIMENT_NAME env).
+mlflow_experiment: "coin-vlm-finetune"
 max_seq_length: 2048
  
 # DataLoader

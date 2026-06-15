@@ -1,0 +1,52 @@
+# QLoRA fine-tuning backend for PaliGemma 2 (hf_peft + 4-bit NF4).
+# Use with config/model/paligemma2_10b_896.yaml:
+#   make train MODEL=config/model/paligemma2_10b_896.yaml \
+#              BACKEND=config/backend/hf_peft_lora_paligemma.yaml
+#
+# Differs from config/backend/hf_peft_lora.yaml in two PaliGemma-specific ways:
+#   1. target_modules is a REGEX scoped to the language model, so LoRA does NOT
+#      leak into the SigLIP vision tower (whose attention also uses q/k/v_proj).
+#   2. training overrides below make the 896px / 4096-image-token footprint fit.
+model:
+  backend: "hf_peft"
+
+  lora:
+    r: 16
+    lora_alpha: 32
+    lora_dropout: 0.05
+    # Single regex string (PEFT matches str target_modules with re.fullmatch).
+    # Matches only Gemma-2 decoder projections under `...language_model...`,
+    # e.g. model.language_model.layers.0.self_attn.q_proj. The SigLIP vision
+    # tower (model.vision_tower...) has no "language_model" in its path, so it
+    # stays frozen — the standard PaliGemma recipe.
+    target_modules: '.*language_model.*\.(q_proj|k_proj|v_proj|o_proj|gate_proj|up_proj|down_proj)$'
+    bias: "none"
+    task_type: "CAUSAL_LM"
+
+  quantization:
+    load_in_4bit: true
+    bnb_4bit_compute_dtype: "bfloat16"
+    bnb_4bit_quant_type: "nf4"
+    bnb_4bit_use_double_quant: true
+    # Keep the vision tower, multimodal projector and LM head OUT of 4-bit so
+    # fine-grained visual detail (coin year / mint mark) isn't degraded. These
+    # are PaliGemma's native module names.
+    llm_int8_skip_modules: ["vision_tower", "multi_modal_projector", "lm_head"]
+
+training:
+  backend: "hf_peft"
+  # --- 896px memory reality (overrides config/training/training.yaml) ---
+  # Every image expands to 4096 image tokens; with a 10B (4-bit) backbone the
+  # per-step footprint is large even with gradient checkpointing. The defaults
+  # (bs=4) are tuned for ~2048-token Qwen/InternVL and will OOM here.
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 1
+  gradient_accumulation_steps: 8        # effective batch ~8
+  # Sanity ceiling only — the PaliGemma collator does NOT truncate (truncation
+  # would cut image tokens). Kept >= image_seq_length(4096) + prefix + suffix.
+  max_seq_length: 4608
+  # Generation eval at 896px/10B is slow; trim the per-eval sample count so eval
+  # steps don't dominate wall-clock. Raise if you want tighter metric estimates.
+  generation_eval:
+    enabled: true
+    max_samples: 128

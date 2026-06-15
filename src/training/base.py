@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
-from src.utils import get_logger
+from src.utils import get_logger, report_to_list
 from omegaconf import DictConfig, OmegaConf, open_dict, read_write
 from .callbacks import GradNormCallback, MemoryCallback
 
@@ -100,11 +100,18 @@ class BaseTrainer(ABC):
                 gen = gen_results["metrics"]
             except Exception as e:
                 # Never let generation eval crash the training loop. Log loudly
-                # and return the eval_loss-only metrics; HF will fall back to
-                # warning about the missing best-model metric but training
-                # continues.
+                # and inject sentinel values so the keys HF reads for
+                # `metric_for_best_model` (eval_extract_match, ...) still exist.
+                # Otherwise _determine_best_metric raises KeyError and kills the
+                # whole run on the FIRST failed eval. Sentinels are the "worst"
+                # value (0.0 with greater_is_better=true), so a failed eval is
+                # never selected as the best checkpoint.
                 logger.exception("Generation eval failed at step %d: %s",
                                  trainer.state.global_step, e)
+                metrics.setdefault("eval_extract_match", 0.0)
+                metrics.setdefault("eval_mint_mark_accuracy", 0.0)
+                metrics.setdefault("eval_year_accuracy", 0.0)
+                metrics.setdefault("eval_parse_error_rate", 1.0)
                 return metrics
             finally:
                 try:
@@ -152,6 +159,13 @@ class BaseTrainer(ABC):
         if self.trainer is None:
             raise ValueError("Trainer has not been initialized. Call train() first.")
         return self.trainer.model
+
+    def get_best_checkpoint(self) -> str:
+        """Best checkpoint dir (by metric_for_best_model), or the run dir if the
+        trainer didn't track one. Used to point the register step at the model."""
+        state = getattr(self.trainer, "state", None)
+        best = getattr(state, "best_model_checkpoint", None) if state else None
+        return best or str(self.config.training.output_dir)
     
     def _build_args(self):
         from transformers import TrainingArguments
@@ -182,7 +196,7 @@ class BaseTrainer(ABC):
             dataloader_pin_memory= training_args.dataloader_pin_memory,
             seed= training_args.seed,
             remove_unused_columns= False, # dataset return image + label dict, no need to remove columns
-            report_to= training_args.report_to,
+            report_to= report_to_list(training_args.report_to),
             run_name= training_args.run_name,
         )
 

@@ -1,0 +1,46 @@
+# PaliGemma 2 — 10B backbone @ 896px (Gemma-2 9B decoder + SigLIP-So400m vision).
+#
+# Repo: `google/paligemma2-10b-pt-896` (GATED — accept Google's license on the
+# HF model page and provide an authenticated HF token, or the weights 401).
+# Use the `pt` (pretrained) checkpoint for fine-tuning; `mix` is the
+# ready-to-use task-mixture model and `ft` are PaliGemma-1-era demos.
+#
+# PaliGemma 2 is NOT a chat model: it has no chat template and uses the
+# prefix/suffix format. `prompt_style: prefix_suffix` switches the shared
+# collator / predictor / evaluator onto the PaliGemma path:
+#   processor(text=<prefix>, suffix=<answer>, images=...) -> processor builds
+#   `labels` itself (image tokens + prefix masked to -100 via token_type_ids).
+# Pair this with config/backend/hf_peft_lora_paligemma.yaml.
+name: "google/paligemma2-10b-pt-896"
+model_name: "google/paligemma2-10b-pt-896"
+trust_remote_code: false          # native transformers class (PaliGemmaForConditionalGeneration)
+torch_dtype: "bfloat16"           # weights ship in bf16
+device_map: "auto"
+# Attention backend trade-off for Gemma-2 at 896px (4096 image tokens):
+#   - "eager"   honours Gemma-2 attention soft-capping but materialises the full
+#               4096x4096 score matrix per layer -> OOMs on a 40GB A100. Avoid.
+#   - "sdpa"    memory-efficient (fits 40GB), but PyTorch SDPA ignores soft-cap.
+#               This is the practical default for A100-40GB QLoRA here.
+#   - "flash_attention_2" best of both (mem-efficient + soft-cap on flash-attn
+#               >= 2.6) — use it if FA2 is installed and working on the box.
+attn_implementation: "sdpa"
+gradient_checkpointing: true
+
+# Fixed square resolution is baked into the checkpoint (896px -> 4096 image
+# tokens per image via SigLIP). There is intentionally NO `processor:` block:
+# PaliGemma has no Qwen-style min_pixels/max_pixels and no InternVL-style
+# tiling. The global inference.yaml `processor:` block is a harmless no-op here
+# (loaders skip it for fixed-resolution processors).
+
+# PaliGemma single-turn prefix/suffix pipeline.
+prompt_style: "prefix_suffix"
+prompt:
+  # The task prefix the model is conditioned on. Training AND inference use this
+  # exact string (resolve_prefix defaults to model.prompt.prefix) so a
+  # fine-tuned PaliGemma always sees the prefix it was trained on.
+  prefix: "extract year and mint mark"
+  # The suffix (target) is built from response_template, same as the chat path.
+  response_format: "json"
+  response_template:
+    year: "{year}"
+    mint_mark: "{mint_mark}"

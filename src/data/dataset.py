@@ -44,10 +44,13 @@ class CoinDataset(Dataset):
                 return load_from_disk(name)[split]
             return load_dataset(name, split=split)
 
+        # Hub repo id: pin the dataset version (tag/SHA) for reproducibility.
+        # revision=None -> latest on main. Irrelevant for local folders above.
         return load_dataset(
             name,
             split=split,
             cache_dir=self.config.data.get("cache_dir", None),
+            revision=self.config.data.get("hf_revision", None),
         )
 
     def __len__(self):

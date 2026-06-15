@@ -1,0 +1,18 @@
+# Reproducible conda env for training/eval.
+#   conda env create -f environment.yml
+#   conda activate coin-vlm-finetune
+#
+# conda only provides the Python interpreter + pip; ALL ML packages are
+# installed by pip (torch cu128 wheels, unsloth, etc.) to match the existing
+# "conda for env, pip for packages" setup. Versions are pinned by constraints.txt.
+name: coin-vlm-finetune
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+      - --extra-index-url https://download.pytorch.org/whl/cu128
+      - -c constraints.txt
+      - -r requirements.txt
+      - -e .

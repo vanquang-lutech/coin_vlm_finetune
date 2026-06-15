@@ -11,8 +11,12 @@
 #       --extra-index-url https://download.pytorch.org/whl/cu128
 #
 # To refresh after an intentional upgrade, re-run `pip freeze` on the server and
-# regenerate this file. NOTE: mlflow + dvc are NOT here yet — add them when
-# implementing the MLOps phases (see docs/mlops.md).
+# regenerate this file.
+#
+# PENDING (Phase 3): `mlflow-skinny` (client) is in requirements.txt but NOT yet
+# pinned here — install it on the server first, resolve any conflict with the
+# pins below (pydantic/protobuf/numpy), then `pip freeze` and add mlflow-skinny
+# + its new transitive deps to this file. See docs/mlops.md Phase 3.
 
 # --- torch 2.8 + cu128 coupled stack (must stay matched; need the cu128 index) ---
 torch==2.8.0+cu128

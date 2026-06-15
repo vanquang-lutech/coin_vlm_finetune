@@ -7,13 +7,19 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from .metrics import compute_metrics, parse_response
-from src.utils import safe_template_kwargs
+from src.utils import (
+    safe_template_kwargs,
+    log_metrics,
+    is_prefix_suffix,
+    resolve_prefix,
+)
 
 logger = logging.getLogger(__name__)
 
 class CoinEvaluator:
     def __init__(self, config, model=None, processor=None, checkpoint_path=None, load_base=False):
         self.config = config
+        self.prefix_suffix = is_prefix_suffix(config)
 
         if model is not None and processor is not None:
             # Caller (e.g. training callback) owns this processor object; do NOT
@@ -51,6 +57,10 @@ class CoinEvaluator:
         and hurting fine-grained mint-mark recognition.
         """
         if processor is None:
+            return
+        if self.prefix_suffix:
+            # PaliGemma: fixed square resolution baked into the checkpoint; no
+            # min/max_pixels to override.
             return
         processor_config = self.config.get("processor", None)
         if processor_config is None:
@@ -156,7 +166,13 @@ class CoinEvaluator:
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(results, f, indent=2, ensure_ascii=False)
 
-        logger.info("Results saved to: %s", output_path)
+        # Stable, flat metrics file (no predictions) for the quality gate
+        # (scripts/register_model.py) and quick metric diffs. Overwritten each run.
+        metrics_path = output_dir / "metrics.json"
+        with open(metrics_path, "w", encoding="utf-8") as f:
+            json.dump(results.get("metrics", {}), f, indent=2, ensure_ascii=False)
+
+        logger.info("Results saved to: %s (metrics: %s)", output_path, metrics_path)
         return output_path
 
 
@@ -230,31 +246,48 @@ class CoinEvaluator:
         # padding_side="left" into subsequent training batches.
         original_padding_side = self.processor.tokenizer.padding_side
         self.processor.tokenizer.padding_side = "left"
+
+        # Run generation in eager mode (skip torch.compile). Hybrid linear-attn
+        # models (Qwen3.5 Gated DeltaNet) compile causal_conv1d_update with
+        # fullgraph=one_graph; every new prompt length recompiles and blows the
+        # accumulated_recompile_limit mid-eval -> FailOnRecompileLimitHit.
+        #
+        # IMPORTANT: use torch.compiler.set_stance("force_eager"), NOT a
+        # `torch._dynamo.config.disable` toggle. Mutating dynamo config
+        # invalidates the *training* compile cache, so when training resumes
+        # after eval it re-traces RMSNorm under gradient-checkpoint recompute and
+        # dies on a weakref the tracer can't handle. set_stance is a thread-local
+        # stance that forces eager for THIS region only and leaves the cached
+        # training graphs untouched.
+        from contextlib import nullcontext
+        _set_stance = getattr(getattr(torch, "compiler", None), "set_stance", None)
+        eager_ctx = _set_stance("force_eager") if _set_stance is not None else nullcontext()
         try:
-            inputs = self.processor(
-                images = images,
-                text = texts,
-                return_tensors = "pt",
-                padding = True,
-            ).to(self.device)
+            with eager_ctx:
+                inputs = self.processor(
+                    images = images,
+                    text = texts,
+                    return_tensors = "pt",
+                    padding = True,
+                ).to(self.device)
 
-            outputs = self.model.generate(
-                **inputs,
-                max_new_tokens = generation_config.get("max_new_tokens", 256),
-                do_sample = generation_config.get("do_sample", False),
-                temperature = generation_config.get("temperature", 1.0),
-                top_p = generation_config.get("top_p", 1.0),
-                pad_token_id = self.processor.tokenizer.pad_token_id,
-                eos_token_id = self.processor.tokenizer.eos_token_id,
-            )
+                outputs = self.model.generate(
+                    **inputs,
+                    max_new_tokens = generation_config.get("max_new_tokens", 256),
+                    do_sample = generation_config.get("do_sample", False),
+                    temperature = generation_config.get("temperature", 1.0),
+                    top_p = generation_config.get("top_p", 1.0),
+                    pad_token_id = self.processor.tokenizer.pad_token_id,
+                    eos_token_id = self.processor.tokenizer.eos_token_id,
+                )
 
-            input_len = inputs["input_ids"].shape[1]
-            return self.processor.batch_decode(
-                outputs[:, input_len:],
-                skip_special_tokens=True,
-            )
+                input_len = inputs["input_ids"].shape[1]
+                return self.processor.batch_decode(
+                    outputs[:, input_len:],
+                    skip_special_tokens=True,
+                )
         finally:
-            # Restore original padding side for training, even on exception.
+            # Restore padding side for training, even on exception.
             self.processor.tokenizer.padding_side = original_padding_side
 
     def _eval_collate_fn(self, batch: list[dict]) -> dict:
@@ -268,15 +301,20 @@ class CoinEvaluator:
             for item in batch
         ]
 
-        texts = [
-            self.processor.apply_chat_template(
-                self._build_eval_messages(),
-                tokenize=False,
-                add_generation_prompt=True,
-                **self._template_kwargs,
-            )
-            for _ in batch
-        ]
+        if self.prefix_suffix:
+            # PaliGemma: feed the bare training prefix (no chat roles / no
+            # generation prompt). The processor expands image tokens + <bos>.
+            texts = [resolve_prefix(self.config)] * len(batch)
+        else:
+            texts = [
+                self.processor.apply_chat_template(
+                    self._build_eval_messages(),
+                    tokenize=False,
+                    add_generation_prompt=True,
+                    **self._template_kwargs,
+                )
+                for _ in batch
+            ]
 
         return {
             "images": images,
@@ -335,15 +373,18 @@ class CoinEvaluator:
             logger.info("  gold=%-5s %s", gold, preds)
         logger.info("=" * 50)
 
+        # Scalar metrics -> both W&B and MLflow (if active).
+        log_metrics({
+            "eval/extract_match": metrics["extract_match"],
+            "eval/year_accuracy": metrics["year_accuracy"],
+            "eval/mint_mark_accuracy": metrics["mint_mark_accuracy"],
+            "eval/parse_error_rate": metrics["parse_error_rate"],
+        })
+
+        # Confusion matrix: W&B Table + MLflow JSON artifact (no scalar form).
         try:
             import wandb
             if wandb.run is not None:
-                wandb.log({
-                    "eval/extract_match": metrics["extract_match"],
-                    "eval/year_accuracy": metrics["year_accuracy"],
-                    "eval/mint_mark_accuracy": metrics["mint_mark_accuracy"],
-                    "eval/parse_error_rate": metrics["parse_error_rate"],
-                })
                 rows = [
                     [gold, pred, count]
                     for gold, preds in metrics["confusion_matrix"].items()
@@ -355,5 +396,13 @@ class CoinEvaluator:
                         data=rows,
                     )
                 })
-        except ImportError:
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            import mlflow
+            if mlflow.active_run() is not None:
+                mlflow.log_dict(
+                    metrics["confusion_matrix"], "eval_confusion_matrix.json"
+                )
+        except Exception:  # noqa: BLE001
             pass

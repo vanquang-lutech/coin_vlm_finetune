@@ -1,0 +1,88 @@
+# Airflow stack (LocalExecutor): metadata Postgres + init + webserver + scheduler.
+# The scheduler runs tasks (LocalExecutor) and spawns the train container via the
+# mounted docker socket (DockerOperator). Orchestration only — ML logic lives in
+# the train image (`make ...`). See docs/mlops.md Mục 8.
+#
+# Prereqs in .env:
+#   AIRFLOW_DB_PW, AIRFLOW_FERNET_KEY, AIRFLOW_SECRET_KEY
+#   DOCKER_GID         -> host docker group gid (run: getent group docker | cut -d: -f3)
+#   COIN_PROJECT_DIR   -> host repo path (default /data/coin/coin_vlm_finetune)
+#   COIN_TRAIN_IMAGE   -> train image tag (default coin-vlm-train:latest)
+#
+# Run (on the GPU server):
+#   docker compose -f docker-compose.airflow.yml up -d
+# UI: http://<server-host>:8080  (admin/admin — change it)
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: Dockerfile.airflow
+  image: coin-vlm-airflow:latest
+  environment: &airflow-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${AIRFLOW_DB_PW:?set AIRFLOW_DB_PW in .env}@airflow-db:5432/airflow
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY:-changeme}
+    # Defaults the DAG reads via Airflow Variables override; harmless if unused.
+    COIN_PROJECT_DIR: ${COIN_PROJECT_DIR:-/data/coin/coin_vlm_finetune}
+    COIN_TRAIN_IMAGE: ${COIN_TRAIN_IMAGE:-coin-vlm-train:latest}
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./airflow/logs:/opt/airflow/logs
+    - /var/run/docker.sock:/var/run/docker.sock      # spawn train container on host
+  group_add:
+    - ${DOCKER_GID:-999}                              # host docker group → socket access
+
+services:
+  airflow-db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: ${AIRFLOW_DB_PW:?set AIRFLOW_DB_PW in .env}
+      POSTGRES_DB: airflow
+    volumes:
+      - /data/airflow/pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  airflow-init:
+    <<: *airflow-common
+    depends_on:
+      airflow-db:
+        condition: service_healthy
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+        airflow users create --username admin --password admin \
+          --firstname admin --lastname admin --role Admin --email admin@example.com || true
+        airflow pools set gpu_pool 1 "Serialize GPU training jobs (shared GPU)"
+    restart: on-failure
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    depends_on:
+      airflow-db:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    restart: unless-stopped
+    depends_on:
+      airflow-db:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully

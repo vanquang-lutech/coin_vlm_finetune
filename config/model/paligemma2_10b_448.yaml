@@ -1,0 +1,30 @@
+# PaliGemma 2 — 10B backbone @ 448px (RECOMMENDED for A100-40GB train / 3090 serve).
+#
+# Repo: `google/paligemma2-10b-pt-448` (GATED — accept Google's license + provide
+# an HF token). 448px -> 1024 image tokens (vs 4096 at 896): ~4x cheaper to serve
+# and far lower latency on a 3090, while still resolving a 4-digit year + 1-2 char
+# mint mark. Step up to the 896 config only if you measure missed small marks.
+#
+# Pair with config/backend/hf_peft_lora_paligemma_448.yaml.
+name: "google/paligemma2-10b-pt-448"
+model_name: "google/paligemma2-10b-pt-448"
+trust_remote_code: false
+torch_dtype: "bfloat16"
+device_map: "auto"
+# At 448 (1024 tokens) the full attention matrix is tiny, so "eager" fits A100-40GB
+# easily AND honours Gemma-2 attention soft-capping (matches a soft-cap-honouring
+# vLLM serve via FLASHINFER). Switch to "sdpa" for a bit more speed if you accept
+# dropping soft-capping. ("eager" is only an OOM problem at 896.)
+attn_implementation: "eager"
+gradient_checkpointing: true
+
+# Fixed 448px square resolution baked into the checkpoint -> 1024 image tokens.
+# No `processor:` block: PaliGemma has no min_pixels/max_pixels.
+
+prompt_style: "prefix_suffix"
+prompt:
+  prefix: "extract year and mint mark"
+  response_format: "json"
+  response_template:
+    year: "{year}"
+    mint_mark: "{mint_mark}"

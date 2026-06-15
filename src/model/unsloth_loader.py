@@ -24,10 +24,19 @@ class UnslothModelLoader(BaseModelLoader):
         if processor_config is None:
             processor_config = self.config.model.get("processor", None)
         logger.info("Loading Unsloth model repo: %s", unsloth_name)
-        model, processor = FastVisionModel.from_pretrained(
-            unsloth_name,
+        load_kwargs = dict(
             load_in_4bit = model_config.get("load_in_4bit", False),
             use_gradient_checkpointing = "unsloth",
+        )
+        # Unsloth's canonical bf16 call for hybrid/MoE models (e.g. Qwen3.5,
+        # which should NOT be QLoRA'd in 4-bit) passes load_in_16bit=True. Only
+        # forward it when the config sets it, so existing 4-bit configs and
+        # older Unsloth builds (which may not accept the kwarg) are unaffected.
+        if "load_in_16bit" in model_config:
+            load_kwargs["load_in_16bit"] = model_config.get("load_in_16bit")
+        model, processor = FastVisionModel.from_pretrained(
+            unsloth_name,
+            **load_kwargs,
         )
 
         self.processor = processor

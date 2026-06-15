@@ -1,7 +1,26 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "coin-finetune-vlm"
 version = "0.1.0"
-description = "Add your description here"
+description = "Fine-tune a vision-language model for coin year + mint-mark extraction."
 readme = "README.md"
 requires-python = ">=3.11"
+
+# Runtime dependencies are intentionally NOT declared here. They live in
+# requirements.txt (pinned by constraints.txt) because they need:
+#   - a custom index for the torch 2.8 + cu128 wheels (--extra-index-url), and
+#   - a strict install/import ordering for unsloth vs transformers,
+# neither of which a plain PEP 621 dependency list can express.
+#
+# Install recipe (inside the conda env):
+#   pip install -r requirements.txt -c constraints.txt \
+#       --extra-index-url https://download.pytorch.org/whl/cu128
+#   pip install -e . --no-deps        # install THIS project as an editable package
 dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]

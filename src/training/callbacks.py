@@ -1,7 +1,7 @@
 import torch
 from transformers import TrainerCallback, TrainerControl, TrainerState, TrainingArguments
 
-from src.utils import get_logger
+from src.utils import get_logger, log_metrics
 
 logger = get_logger(__name__)
 
@@ -45,16 +45,10 @@ class GradNormCallback(TrainerCallback):
             total_norm,
         )
 
-        try:
-            import wandb
-            if wandb.run is not None:
-                wandb.log(
-                    {"train/trainable_grad_norm": total_norm},
-                    step=state.global_step,
-                )
-                
-        except ImportError:
-            pass
+        log_metrics(
+            {"train/trainable_grad_norm": total_norm},
+            step=state.global_step,
+        )
 
 class GenerationMetricsCallback(TrainerCallback):
     """Run generation-based eval on (a subsample of) val during training and
@@ -134,20 +128,15 @@ class GenerationMetricsCallback(TrainerCallback):
             gen_metrics["parse_error_rate"],
         )
 
-        try:
-            import wandb
-            if wandb.run is not None:
-                wandb.log(
-                    {
-                        "eval/mint_mark_accuracy": gen_metrics["mint_mark_accuracy"],
-                        "eval/year_accuracy": gen_metrics["year_accuracy"],
-                        "eval/extract_match": gen_metrics["extract_match"],
-                        "eval/parse_error_rate": gen_metrics["parse_error_rate"],
-                    },
-                    step=state.global_step,
-                )
-        except ImportError:
-            pass
+        log_metrics(
+            {
+                "eval/mint_mark_accuracy": gen_metrics["mint_mark_accuracy"],
+                "eval/year_accuracy": gen_metrics["year_accuracy"],
+                "eval/extract_match": gen_metrics["extract_match"],
+                "eval/parse_error_rate": gen_metrics["parse_error_rate"],
+            },
+            step=state.global_step,
+        )
 
 
 class MemoryCallback(TrainerCallback):
@@ -171,15 +160,10 @@ class MemoryCallback(TrainerCallback):
                 f"GPU {i} | Memory Allocated: {mem_alloc:.2f} GB | Memory Reserved: {mem_reserved:.2f} GB"
             )
 
-            try:
-                import wandb
-                if wandb.run is not None:
-                    wandb.log(
-                        {
-                            f"gpu_{i}/memory_allocated_gb": mem_alloc,
-                            f"gpu_{i}/memory_reserved_gb": mem_reserved,
-                        },
-                        step=state.global_step,
-                    )
-            except ImportError:
-                pass
+            log_metrics(
+                {
+                    f"gpu_{i}/memory_allocated_gb": mem_alloc,
+                    f"gpu_{i}/memory_reserved_gb": mem_reserved,
+                },
+                step=state.global_step,
+            )

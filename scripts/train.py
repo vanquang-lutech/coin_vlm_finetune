@@ -1,10 +1,24 @@
+# Unsloth MUST be imported before transformers/peft (which the src.* imports
+# below pull in transitively) so all of its patches/optimizations — including
+# memory savings — are applied. Keep this as the very first import.
+import unsloth  # noqa: E402,F401
+
 import argparse
 import sys
 from pathlib import Path
  
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
  
-from src.utils import ConfigLoader, finish_wandb, get_logger, init_wandb, set_seed
+from src.utils import (
+    ConfigLoader,
+    finish_mlflow,
+    finish_wandb,
+    get_logger,
+    init_mlflow,
+    init_wandb,
+    set_seed,
+    write_run_metadata,
+)
 from src.data.dataset import CoinDataset
 from src.model.factory import get_model_loader
 from src.training.factory import get_trainer
@@ -65,7 +79,8 @@ def main():
         deterministic=config.training.get("deterministic", False),
     )
     init_wandb(config)
- 
+    init_mlflow(config)
+
     loader = get_model_loader(config)
     model, processor = loader.load()
  
@@ -74,9 +89,26 @@ def main():
     val_ds = CoinDataset(config, split="validation")
  
     trainer = get_trainer(config, model, processor, train_ds, val_ds)
+
+    # Lineage: trainer.__init__ resolves training.output_dir to the timestamped
+    # run dir; write run_metadata.json there before training so it survives even
+    # if the run later crashes.
+    write_run_metadata(config, config.training.output_dir)
+
     trainer.train()
 
-    
+    # Stable pointer to the best checkpoint so `make register` / Airflow can
+    # find it without parsing timestamped run dirs.
+    try:
+        result_dir = Path(config.training.get("result_dir", "outputs/results"))
+        result_dir.mkdir(parents=True, exist_ok=True)
+        best_ckpt = trainer.get_best_checkpoint()
+        (result_dir / "best_checkpoint.txt").write_text(best_ckpt, encoding="utf-8")
+        logger.info("Best checkpoint pointer written: %s -> %s",
+                    result_dir / "best_checkpoint.txt", best_ckpt)
+    except Exception:
+        logger.exception("Could not write best_checkpoint.txt pointer.")
+
     if not args.skip_test_eval:
         logger.info("Running evaluation on test set...")
         test_ds = CoinDataset(config, split="test")
@@ -85,6 +117,7 @@ def main():
         evaluator.save_results(results, config.training.get("result_dir", "outputs/results/"))
  
     finish_wandb()
+    finish_mlflow()
     logger.info("Done.")
  
 if __name__ == "__main__":

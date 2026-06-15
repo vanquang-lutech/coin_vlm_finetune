@@ -25,9 +25,28 @@ import subprocess
 import sys
 from pathlib import Path
 
-from src.utils import get_logger, safe_template_kwargs
+from src.utils import get_logger, safe_template_kwargs, is_prefix_suffix
 
 logger = get_logger(__name__)
+
+
+# Per-prompt-style defaults for W4A16 export. PaliGemma (Gemma-2 decoder + SigLIP)
+# needs different module-ignore names than Qwen, and llm-compressor's AWQModifier
+# currently breaks on multimodal Gemma (cache_position=None -> TypeError, see
+# vllm-project/llm-compressor#1577), so GPTQ is the reliable W4A16 path there.
+# Both modifiers emit a compressed-tensors checkpoint that vLLM serves natively.
+_EXPORT_DEFAULTS = {
+    "chat": {  # Qwen3-VL / InternVL
+        "modifier": "awq",
+        "ignore": ["lm_head", "re:.*visual.*", "re:.*merger.*"],
+        "sequential_targets": None,
+    },
+    "prefix_suffix": {  # PaliGemma 2
+        "modifier": "gptq",
+        "ignore": ["re:.*lm_head", "re:.*vision_tower.*", "re:.*multi_modal_projector.*"],
+        "sequential_targets": ["Gemma2DecoderLayer"],
+    },
+}
 
 
 def _resolve_base_model(config, adapter_path: Path, override: str | None) -> str:
@@ -219,21 +238,34 @@ def _build_awq_calibration_dataset(config, processor, num_samples: int, split: s
     from src.data import CoinDataset, CoinDataCollator
 
     coin = CoinDataset(config, split=split)
-    msg_builder = CoinDataCollator(processor, config)  # for _build_messages only
+    col = CoinDataCollator(processor, config)  # reuse prompt/suffix building
+    prefix_suffix = is_prefix_suffix(config)
     n = min(num_samples, len(coin))
 
     rows = []
     for i in range(n):
         item = coin[i]
-        messages = msg_builder._build_messages(item["label"])
-        text = processor.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=False,
-            **safe_template_kwargs(processor, {"enable_thinking": False}),
-        )
-        inputs = processor(text=[text], images=[item["image"]], return_tensors="pt")
+        if prefix_suffix:
+            # PaliGemma: prefix + suffix (no chat template). Including the suffix
+            # makes calibration cover the answer tokens the LM must generate,
+            # matching the chat path (which renders the assistant turn too).
+            suffix = col._build_response(item["label"])
+            inputs = processor(
+                text=[col.prefix_text],
+                suffix=[suffix],
+                images=[item["image"]],
+                return_tensors="pt",
+            )
+        else:
+            messages = col._build_messages(item["label"])
+            text = processor.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=False,
+                **safe_template_kwargs(processor, {"enable_thinking": False}),
+            )
+            inputs = processor(text=[text], images=[item["image"]], return_tensors="pt")
         rows.append({k: v.tolist() for k, v in inputs.items()})
 
-    logger.info("Built %d calibration samples for AWQ.", len(rows))
+    logger.info("Built %d calibration samples for W4A16 export.", len(rows))
     return HFDataset.from_list(rows)
 
 
@@ -261,7 +293,6 @@ def export_awq(
     import torch
     from transformers import AutoProcessor, AutoModelForImageTextToText
     from llmcompressor import oneshot
-    from llmcompressor.modifiers.awq import AWQModifier
 
     model_path = Path(model_path)
     output_dir = Path(output_dir)
@@ -293,24 +324,45 @@ def export_awq(
         assert len(batch) == 1, "AWQ calibration expects batch_size=1"
         return {k: torch.tensor(v) for k, v in batch[0].items()}
 
-    # Keep vision encoder + merger and the output head in full precision.
-    # NOTE: if AWQ errors on an unmatched module, inspect model.named_modules()
-    # and adjust these ignore patterns (Qwen3-VL vision lives under `*.visual.*`).
-    recipe = [
-        AWQModifier(
-            targets=["Linear"],
-            scheme="W4A16",
-            ignore=["lm_head", "re:.*visual.*", "re:.*merger.*"],
-        )
-    ]
+    # Pick W4A16 modifier + module-ignore list by prompt style, overridable via
+    # an optional `model.export` block. PaliGemma -> GPTQ (AWQ is bugged on
+    # multimodal Gemma) with vision_tower/multi_modal_projector ignored; Qwen ->
+    # AWQ with visual/merger ignored. Either way the output is compressed-tensors
+    # W4A16 (only the LM Linear layers; vision tower + head stay bf16).
+    style = "prefix_suffix" if is_prefix_suffix(config) else "chat"
+    defaults = _EXPORT_DEFAULTS[style]
+    export_cfg = config.model.get("export", {}) or {}
+    modifier = export_cfg.get("modifier", defaults["modifier"])
+    ignore = list(export_cfg.get("ignore", defaults["ignore"]))
+    sequential_targets = export_cfg.get("sequential_targets", defaults["sequential_targets"])
+    sequential_targets = list(sequential_targets) if sequential_targets else None
 
-    logger.info("Running AWQ oneshot quantization (W4A16)...")
+    # Calibration sequences must NOT be truncated: PaliGemma at 896px expands to
+    # 4096 image tokens, and cutting them trips the image-token-count check. The
+    # PaliGemma model config sets no `max_seq_length`, so default high there.
+    default_seq = 4608 if style == "prefix_suffix" else 2048
+    seq_len = max_seq_length or config.model.get("max_seq_length", default_seq)
+
+    if modifier == "gptq":
+        from llmcompressor.modifiers.quantization import GPTQModifier
+        recipe = [GPTQModifier(
+            targets="Linear", scheme="W4A16",
+            ignore=ignore, sequential_targets=sequential_targets,
+        )]
+    else:
+        from llmcompressor.modifiers.awq import AWQModifier
+        recipe = [AWQModifier(targets=["Linear"], scheme="W4A16", ignore=ignore)]
+
+    logger.info(
+        "Running %s oneshot quantization (W4A16, ignore=%s, seq_len=%d)...",
+        modifier.upper(), ignore, seq_len,
+    )
     oneshot(
         model=model,
         dataset=calib_dataset,
         data_collator=data_collator,
         recipe=recipe,
-        max_seq_length=max_seq_length or config.model.get("max_seq_length", 2048),
+        max_seq_length=seq_len,
         num_calibration_samples=min(num_calibration_samples, len(calib_dataset)),
         output_dir=str(output_dir),
     )
@@ -318,10 +370,12 @@ def export_awq(
     # Make sure the processor lands next to the quantized weights for vLLM.
     processor.save_pretrained(str(output_dir))
 
-    logger.info("AWQ export complete. Quantized model saved to: %s", output_dir)
+    logger.info("W4A16 export complete. Quantized model saved to: %s", output_dir)
     logger.info(
-        "Serve with vLLM, e.g.:\n"
-        "  vllm serve %s --trust-remote-code --quantization awq --limit-mm-per-prompt image=1",
+        "Output is compressed-tensors — vLLM auto-detects it from config.json "
+        "(leave serving.quantization=null; do NOT pass --quantization awq). "
+        "Serve, e.g.:\n"
+        "  vllm serve %s --trust-remote-code --limit-mm-per-prompt image=1",
         output_dir,
     )
 
