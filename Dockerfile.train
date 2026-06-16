@@ -15,21 +15,25 @@
 #     -v /data/coin/coin_vlm_finetune:/app \
 #     --env-file .env \
 #     coin-vlm-train:<sha>
-FROM docker.m.daocloud.io/nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04
+# Base = official Python 3.11 (matches the conda env that froze constraints.txt;
+# numpy 2.4.6 and the rest need py>=3.11). No nvidia/cuda base needed: the torch
+# cu128 wheels bundle the CUDA runtime + cuDNN + NCCL, and the GPU driver comes from
+# the host via `--gpus`. We only use the -runtime CUDA stack (no nvcc); xformers and
+# torch are prebuilt wheels, nothing compiles against CUDA headers.
+FROM docker.m.daocloud.io/library/python:3.11-slim
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 
+# python:3.11-slim already ships Python 3.11 + pip + headers (no python3 apt pkgs).
 # git           -> lineage capture (run_metadata.json) reads git commit at train time
 # build-essential -> a few train deps may build from source
 # libglib2.0-0/libgomp1 -> opencv + OpenMP runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        python3 python3-pip python3-dev \
         build-essential git \
         libglib2.0-0 libgomp1 \
-    && ln -sf /usr/bin/python3 /usr/bin/python \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
