@@ -36,7 +36,7 @@ x-airflow-common: &airflow-common
 
 services:
   airflow-db:
-    image: postgres:16
+    image: docker.m.daocloud.io/library/postgres:16
     restart: unless-stopped
     environment:
       POSTGRES_USER: airflow
@@ -69,7 +69,7 @@ services:
     <<: *airflow-common
     command: webserver
     ports:
-      - "8080:8080"
+      - "49712:8080"
     restart: unless-stopped
     depends_on:
       airflow-db:

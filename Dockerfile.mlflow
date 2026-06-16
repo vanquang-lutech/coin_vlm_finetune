@@ -7,13 +7,12 @@
 # breaking changes). See docs/mlops.md Phase 3.1.
 #
 # Built + run via docker-compose.mlflow.yml (compose supplies `mlflow server`).
-FROM python:3.11-slim
+FROM docker.m.daocloud.io/library/python:3.11-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
-RUN pip install --no-cache-dir \
-        "mlflow>=2.19,<3.0" \
-        "psycopg2-binary>=2.9"
+RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple \
+        "mlflow>=2.19,<3.0" "psycopg2-binary>=2.9"
 
 EXPOSE 5000

@@ -8,9 +8,14 @@
 # Run (on the GPU server):
 #   docker compose -f docker-compose.mlflow.yml up -d
 # UI: http://<server-host>:5000
+#
+# NOTE: version "2.4" is required so Docker Compose V1 (1.29.2) honors the
+# healthcheck + depends_on condition below. Compose V2 ignores it (harmless
+# deprecation warning), so this file runs on BOTH V1 and V2.
+version: "2.4"
 services:
   mlflow-db:
-    image: postgres:16
+    image: docker.m.daocloud.io/library/postgres:16
     restart: unless-stopped
     environment:
       POSTGRES_USER: mlflow
@@ -40,6 +45,6 @@ services:
       --serve-artifacts
       --host 0.0.0.0 --port 5000
     ports:
-      - "5000:5000"
+      - "49711:5000"
     volumes:
       - /mnt/nas/coin/mlflow-artifacts:/mnt/nas/coin/mlflow-artifacts    # NAS artifact store

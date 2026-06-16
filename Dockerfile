@@ -16,11 +16,12 @@
 #     -v /data/coin/coin_vlm_finetune/data/models/Qwen3-VL-8B-coin-awq:/models/coin-awq:ro \
 #     -v /data/coin/coin_vlm_finetune/outputs/logs/serving:/logs \
 #     coin-vlm-serve
-FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04
+FROM docker.m.daocloud.io/nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
+    PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
     HF_HUB_OFFLINE=1 \
     TRANSFORMERS_OFFLINE=1
 

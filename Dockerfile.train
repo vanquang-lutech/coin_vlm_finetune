@@ -15,11 +15,12 @@
 #     -v /data/coin/coin_vlm_finetune:/app \
 #     --env-file .env \
 #     coin-vlm-train:<sha>
-FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04
+FROM docker.m.daocloud.io/nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 
 # git           -> lineage capture (run_metadata.json) reads git commit at train time
 # build-essential -> a few train deps may build from source
