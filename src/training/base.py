@@ -96,7 +96,7 @@ class BaseTrainer(ABC):
                     pass
 
                 evaluator = CoinEvaluator(config, model=model, processor=processor)
-                gen_results = evaluator.evaluate(ds)
+                gen_results = evaluator.evaluate(ds, step=trainer.state.global_step)
                 gen = gen_results["metrics"]
             except Exception as e:
                 # Never let generation eval crash the training loop. Log loudly

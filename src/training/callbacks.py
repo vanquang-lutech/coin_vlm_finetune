@@ -99,7 +99,7 @@ class GenerationMetricsCallback(TrainerCallback):
             evaluator = CoinEvaluator(
                 self.config, model=model, processor=self.processor
             )
-            results = evaluator.evaluate(ds)
+            results = evaluator.evaluate(ds, step=state.global_step)
             gen_metrics = results["metrics"]
         finally:
             try:
