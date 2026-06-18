@@ -112,22 +112,82 @@ class UnslothModelLoader(BaseModelLoader):
         lora_config = self.config.get("lora", None)
         if lora_config is None:
             lora_config = self.config.model.get("lora", None)
+
+        # target_modules may be the string "all-linear" (let Unsloth's
+        # get_peft_regex discover EVERY Linear in both towers — driven by the
+        # finetune_* flags below) OR an explicit list of name suffixes. A list
+        # is fine to list(); a string must NOT be list()'d or "all-linear"
+        # explodes into individual characters.
+        tm = lora_config.target_modules
+        target_modules = tm if isinstance(tm, str) else list(tm)
+
+        # Which sub-networks LoRA adapts. Default True (finetune both towers),
+        # now config-controllable. IMPORTANT: these flags only take effect when
+        # target_modules == "all-linear"; with an explicit list Unsloth uses the
+        # list verbatim and ignores them (so an explicit list that names no
+        # vision modules silently leaves the vision tower frozen).
+        finetune_vision_layers = lora_config.get("finetune_vision_layers", True)
+        finetune_language_layers = lora_config.get("finetune_language_layers", True)
+        finetune_attention_modules = lora_config.get("finetune_attention_modules", True)
+        finetune_mlp_modules = lora_config.get("finetune_mlp_modules", True)
+
         logger.info(
-            "Applying Unsloth LoRA Adapter (r=%d)...", lora_config.r
+            "Applying Unsloth LoRA (r=%d, target_modules=%s, vision=%s "
+            "language=%s attn=%s mlp=%s)...",
+            lora_config.r,
+            target_modules if isinstance(target_modules, str) else f"{len(target_modules)} names",
+            finetune_vision_layers, finetune_language_layers,
+            finetune_attention_modules, finetune_mlp_modules,
         )
         self.model = FastVisionModel.get_peft_model(
             self.model,
-            finetune_vision_layers     = True,
-            finetune_language_layers   = True,
-            finetune_attention_modules = True,
-            finetune_mlp_modules       = True,
+            finetune_vision_layers     = finetune_vision_layers,
+            finetune_language_layers   = finetune_language_layers,
+            finetune_attention_modules = finetune_attention_modules,
+            finetune_mlp_modules       = finetune_mlp_modules,
             r = lora_config.r,
             lora_alpha = lora_config.lora_alpha,
             lora_dropout = lora_config.lora_dropout,
-            target_modules = list(lora_config.target_modules),
+            target_modules = target_modules,
             bias = lora_config.bias,
             use_gradient_checkpointing = lora_config.use_gradient_checkpointing,
             random_state = self.config.training.get("seed", 42),
-            use_rslora = False,  # We support rank stabilized LoRA
-            loftq_config = None, # And LoftQ
+            use_rslora = False,
+            loftq_config = None,
         )
+        self._log_lora_coverage()
+
+    def _log_lora_coverage(self) -> None:
+        """Log which modules actually received LoRA, split vision vs language,
+        so "is vision being finetuned?" is verifiable instead of a guess.
+
+        Catches silent non-matches (a mistyped target suffix that matches
+        nothing) and confirms hybrid token-mixing layers (Qwen3.5 GatedDeltaNet
+        in_proj_qkvz / in_proj_ba) got adapters. PEFT names each adapted Linear
+        ``....<proj>.lora_A`` — counting those is an exact tally.
+        """
+        from collections import Counter
+
+        vision_kw = ("visual", "vision", "patch_embed", "merger", "image")
+        vision_names: Counter = Counter()
+        text_names: Counter = Counter()
+        for name, _ in self.model.named_modules():
+            if not name.endswith(".lora_A"):
+                continue
+            leaf = name.split(".")[-2]
+            if any(k in name.lower() for k in vision_kw):
+                vision_names[leaf] += 1
+            else:
+                text_names[leaf] += 1
+
+        logger.info(
+            "[LoRA coverage] vision adapters=%d %s | language adapters=%d %s",
+            sum(vision_names.values()), dict(vision_names),
+            sum(text_names.values()), dict(text_names),
+        )
+        if sum(vision_names.values()) == 0:
+            logger.warning(
+                "[LoRA coverage] NO vision modules received LoRA — the vision "
+                "tower is effectively FROZEN. If you intended to finetune vision, "
+                "set target_modules='all-linear' with finetune_vision_layers=true."
+            )

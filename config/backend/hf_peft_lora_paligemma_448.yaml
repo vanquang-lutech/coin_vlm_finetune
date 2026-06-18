@@ -13,9 +13,23 @@ model:
     r: 16
     lora_alpha: 32
     lora_dropout: 0.05
-    # Regex (PEFT re.fullmatch) scoping LoRA to the Gemma-2 language model only,
-    # leaving the SigLIP vision tower frozen. Same as the 896 backend.
-    target_modules: '.*language_model.*\.(q_proj|k_proj|v_proj|o_proj|gate_proj|up_proj|down_proj)$'
+    # LoRA on BOTH towers — the vision tower learns too. Matched by name SUFFIX
+    # (PEFT endswith for a LIST), hitting the Gemma-2 language layers AND the
+    # SigLIP vision encoder (different names: vision uses out_proj + fc1/fc2,
+    # language uses o_proj + gate/up/down_proj). Same list as the 896 backend.
+    # multi_modal_projector + lm_head stay frozen. 448 (1024 image tokens) makes
+    # vision-LoRA's extra backward memory far easier to fit than 896.
+    target_modules:
+      - q_proj
+      - k_proj
+      - v_proj
+      - o_proj      # language self-attn output (Gemma-2)
+      - out_proj    # vision   self-attn output (SigLIP)
+      - gate_proj
+      - up_proj
+      - down_proj
+      - fc1         # vision MLP (SigLIP)
+      - fc2
     bias: "none"
     task_type: "CAUSAL_LM"
 

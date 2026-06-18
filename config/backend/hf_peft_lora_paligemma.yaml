@@ -14,12 +14,28 @@ model:
     r: 16
     lora_alpha: 32
     lora_dropout: 0.05
-    # Single regex string (PEFT matches str target_modules with re.fullmatch).
-    # Matches only Gemma-2 decoder projections under `...language_model...`,
-    # e.g. model.language_model.layers.0.self_attn.q_proj. The SigLIP vision
-    # tower (model.vision_tower...) has no "language_model" in its path, so it
-    # stays frozen — the standard PaliGemma recipe.
-    target_modules: '.*language_model.*\.(q_proj|k_proj|v_proj|o_proj|gate_proj|up_proj|down_proj)$'
+    # LoRA on BOTH towers — the vision tower learns too (not the LM-only recipe).
+    # Matched by name SUFFIX (PEFT uses endswith for a LIST target_modules), so
+    # the same list hits the Gemma-2 language layers AND the SigLIP vision
+    # encoder, which use DIFFERENT module names:
+    #   language (Gemma-2): q_proj k_proj v_proj o_proj | gate_proj up_proj down_proj
+    #   vision   (SigLIP) : q_proj k_proj v_proj out_proj | fc1 fc2
+    # The multi_modal_projector (`linear`) and lm_head stay frozen.
+    # NOTE: adapting the vision tower makes backprop flow through all SigLIP
+    # layers -> markedly higher activation memory than the LM-only recipe.
+    # gradient checkpointing is on, but at 896px (4096 image tokens) on a 40GB
+    # A100 this is tight — validate it fits, or run this experiment on 448 first.
+    target_modules:
+      - q_proj
+      - k_proj
+      - v_proj
+      - o_proj      # language self-attn output (Gemma-2)
+      - out_proj    # vision   self-attn output (SigLIP)
+      - gate_proj
+      - up_proj
+      - down_proj
+      - fc1         # vision MLP (SigLIP)
+      - fc2
     bias: "none"
     task_type: "CAUSAL_LM"
 

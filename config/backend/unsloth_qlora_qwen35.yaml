@@ -10,32 +10,26 @@ model:
     r: 16
     lora_alpha: 32
     lora_dropout: 0.0
-    # Qwen3.5 (dense) uses a 3:1 HYBRID stack: 3 Gated DeltaNet (linear-attention)
-    # layers for every 1 full-attention layer, so ~75% of layers are DeltaNet.
-    # The standard q/k/v/o_proj names ONLY exist on the ~25% full-attention
-    # layers; the DeltaNet layers expose MERGED projections under different
-    # names. Verified against the HF transformers Qwen3_5 model doc + Unsloth
-    # Qwen3.5 fine-tune guide:
-    #   in_proj_qkvz -> merged Q,K,V,Z (Z = output gate)
-    #   in_proj_ba   -> merged beta, alpha gates
-    #   out_proj     -> DeltaNet output projection
-    # NOTE: they are merged — there is NO in_proj_qkv / in_proj_z / in_proj_b /
-    # in_proj_a. Without in_proj_qkvz + in_proj_ba + out_proj, LoRA leaves the
-    # dominant ~75% token-mixing layers frozen and undertrains the model.
-    target_modules:
-      # Full-attention layers (~25%).
-      - "q_proj"
-      - "k_proj"
-      - "v_proj"
-      - "o_proj"
-      # MLP / FFN (all layers).
-      - "gate_proj"
-      - "up_proj"
-      - "down_proj"
-      # Gated DeltaNet linear-attention (~75% of layers).
-      - "in_proj_qkvz"
-      - "in_proj_ba"
-      - "out_proj"
+    # Finetune BOTH the vision encoder AND the full language stack. "all-linear"
+    # is the robust choice for Qwen3.5's 3:1 HYBRID stack (~75% Gated DeltaNet
+    # linear-attention layers, attached as `layers.N.linear_attn`): Unsloth's
+    # get_peft_regex discovers adapters by STRUCTURE (every nn.Linear whose path
+    # carries a tower tag + an attn/mlp tag; "linear_attn" contains "attn"), so
+    # it adapts the DeltaNet projections regardless of their exact names — which
+    # DIFFER by build: native transformers 5.5.0 uses the UNMERGED names
+    # in_proj_qkv / in_proj_z / in_proj_b / in_proj_a (+ out_proj), while some
+    # trust_remote_code builds use MERGED in_proj_qkvz / in_proj_ba. An explicit
+    # list is fragile to exactly this; all-linear is not, and it also covers the
+    # vision tower (qkv/proj/linear_fc1/fc2) that a q/k/v/o_proj list misses.
+    # finetune_* flags drive selection (only with "all-linear").
+    #
+    # VERIFY on the first run via the "[LoRA coverage]" log line that vision
+    # adapters > 0 AND the DeltaNet in_proj_* names appear under language.
+    target_modules: "all-linear"
+    finetune_vision_layers: true
+    finetune_language_layers: true
+    finetune_attention_modules: true
+    finetune_mlp_modules: true
     bias: "none"
     use_gradient_checkpointing: true
 

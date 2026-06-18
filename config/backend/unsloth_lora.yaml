@@ -8,25 +8,19 @@ model:
     r: 16
     lora_alpha: 32
     lora_dropout: 0.0
-    target_modules:
-      # Full-attention layers (minority in Qwen3.5) + standard for Qwen3-VL.
-      - "q_proj"
-      - "k_proj"
-      - "v_proj"
-      - "o_proj"
-      # MLP (all layers).
-      - "gate_proj"
-      - "up_proj"
-      - "down_proj"
-      # Qwen3.5 GatedDeltaNet linear-attention projections — the MAJORITY of
-      # layers in the hybrid stack. Without these, LoRA only touches the few
-      # full-attention layers + MLP and leaves the dominant token-mixing layers
-      # frozen, which undertrains the model. Harmless for Qwen3-VL (no match).
-      - "in_proj_qkv"
-      - "in_proj_z"
-      - "in_proj_b"
-      - "in_proj_a"
-      - "out_proj"
+    # Finetune vision encoder + full language stack for BOTH Qwen3-VL and
+    # Qwen3.5. "all-linear" discovers adapters by STRUCTURE (every nn.Linear in
+    # a tower, attn+mlp), so it covers the vision tower AND Qwen3.5's Gated
+    # DeltaNet projections (layers.N.linear_attn.*) without hand-listing names —
+    # which is fragile because DeltaNet names differ by build (native
+    # transformers 5.5.0: in_proj_qkv/z/b/a; some remote-code builds: merged
+    # in_proj_qkvz/in_proj_ba). The finetune_* flags drive selection (only with
+    # "all-linear"). Check the "[LoRA coverage]" log on the first run.
+    target_modules: "all-linear"
+    finetune_vision_layers: true
+    finetune_language_layers: true
+    finetune_attention_modules: true
+    finetune_mlp_modules: true
     bias: "none"
     use_gradient_checkpointing: true
 

@@ -8,17 +8,17 @@ model:
     r: 16
     lora_alpha: 32
     lora_dropout: 0.0
-    target_modules:
-      - "q_proj"
-      - "k_proj"
-      - "v_proj"
-      - "o_proj"
-      - "gate_proj"
-      - "up_proj"
-      - "down_proj"
-      # visual merger layers
-      - "visual_merger.mlp.0"
-      - "visual_merger.mlp.2"
+    # Finetune BOTH towers — the vision encoder learns too. "all-linear" lets
+    # Unsloth's get_peft_regex discover every Linear in the vision encoder AND
+    # the language model, so it covers Qwen3-VL's vision module names
+    # (attn qkv/proj, vision MLP, patch-merger) that an explicit
+    # q_proj/k_proj/... list would MISS. The finetune_* flags drive the
+    # selection (they ONLY take effect with "all-linear").
+    target_modules: "all-linear"
+    finetune_vision_layers: true
+    finetune_language_layers: true
+    finetune_attention_modules: true
+    finetune_mlp_modules: true
     bias: "none"
     use_gradient_checkpointing: true
 
