@@ -214,6 +214,46 @@ def init_mlflow(cfg: DictConfig) -> None:
         get_logger(__name__).exception("MLflow init failed; continuing without it.")
 
 
+def log_model_artifact(cfg: DictConfig, ckpt_path, artifact_path: str = "model") -> bool:
+    """Upload the best checkpoint to the ACTIVE MLflow run as an artifact, so the
+    run shows a model in the UI and its "Register Model" button works.
+
+    This is the manual, gate-free path (register straight from the MLflow UI),
+    complementing scripts/register_model.py which applies the quality gate and
+    registers from the CLI / Airflow. Logging the SAME checkpoint dir keeps the
+    two paths' artifacts identical.
+
+    Gated by training.mlflow_log_model (default True); only runs when "mlflow"
+    is in report_to and a run is active. Never raises.
+    """
+    if "mlflow" not in report_to_list(cfg.training.get("report_to", None)):
+        return False
+    if not cfg.training.get("mlflow_log_model", True):
+        return False
+    try:
+        import mlflow
+    except ImportError:
+        return False
+    try:
+        if mlflow.active_run() is None:
+            get_logger(__name__).warning("log_model_artifact: no active MLflow run; skipping.")
+            return False
+        p = Path(ckpt_path)
+        if not p.exists():
+            get_logger(__name__).warning("log_model_artifact: checkpoint not found: %s", p)
+            return False
+        mlflow.log_artifacts(str(p), artifact_path=artifact_path)
+        get_logger(__name__).info(
+            "Logged model to MLflow run under '%s/'. Register from the UI: open "
+            "the run -> Artifacts -> select '%s' -> 'Register Model'.",
+            artifact_path, artifact_path,
+        )
+        return True
+    except Exception:  # noqa: BLE001
+        get_logger(__name__).exception("log_model_artifact failed; continuing.")
+        return False
+
+
 def finish_mlflow() -> None:
     try:
         import mlflow

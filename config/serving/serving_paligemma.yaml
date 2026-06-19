@@ -59,3 +59,9 @@ serving:
   log_dir: "outputs/logs/serving"
   log_rotation: "daily"
   predictions_log: true
+
+  # Prometheus metrics. Exposes vllm:* (engine) + coin_* (app) metrics in
+  # Prometheus text format at {host}:{port}{path}. See deploy/monitoring/.
+  metrics:
+    enabled: true
+    path: "/metrics"

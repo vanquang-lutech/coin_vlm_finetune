@@ -27,3 +27,8 @@ fastapi>=0.110.0
 uvicorn[standard]>=0.29.0
 python-multipart>=0.0.9
 pyngrok>=7.0.0
+
+# /metrics endpoint (Prometheus exposition). The vLLM engine already publishes
+# vllm:* metrics to the default registry; prometheus_client lets us add app-level
+# metrics (latency, parse-rate, null-rate) and expose both via one ASGI app.
+prometheus-client>=0.20.0

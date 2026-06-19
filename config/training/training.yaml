@@ -3,9 +3,9 @@ result_dir: "outputs/results"
  
 # Core hyperparams
 num_train_epochs: 5
-per_device_train_batch_size: 4
-per_device_eval_batch_size: 4
-gradient_accumulation_steps: 2
+per_device_train_batch_size: 2
+per_device_eval_batch_size: 2
+gradient_accumulation_steps: 4
 learning_rate: 1.0e-4
 lr_scheduler_type: "cosine"
 # transformers>=5.x: warmup_steps accepts a float <1 as a *ratio* of total
@@ -55,7 +55,12 @@ report_to: ["wandb", "mlflow"]
 run_name: "coin-vlm"
 # MLflow experiment (overridable via MLFLOW_EXPERIMENT_NAME env).
 mlflow_experiment: "coin-vlm-finetune"
-max_seq_length: 2048
+# Log the best checkpoint to the MLflow run as a 'model/' artifact at train end,
+# so it shows in the UI and can be registered via the "Register Model" button
+# (manual, gate-free — complements `make register` which applies the quality
+# gate). Set false to skip the upload (e.g. very large full-finetune weights).
+mlflow_log_model: true
+max_seq_length: 2560
  
 # DataLoader
 dataloader_num_workers: 4

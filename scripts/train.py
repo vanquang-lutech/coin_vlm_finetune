@@ -29,6 +29,7 @@ from src.utils import (
     get_logger,
     init_mlflow,
     init_wandb,
+    log_model_artifact,
     set_seed,
     write_run_metadata,
 )
@@ -112,6 +113,7 @@ def main():
 
     # Stable pointer to the best checkpoint so `make register` / Airflow can
     # find it without parsing timestamped run dirs.
+    best_ckpt = None
     try:
         result_dir = Path(config.training.get("result_dir", "outputs/results"))
         result_dir.mkdir(parents=True, exist_ok=True)
@@ -128,7 +130,13 @@ def main():
         evaluator = CoinEvaluator(config, model=trainer.get_model(), processor=processor)
         results = evaluator.evaluate(test_ds)
         evaluator.save_results(results, config.training.get("result_dir", "outputs/results/"))
- 
+
+    # Attach the best checkpoint to the (still-active) MLflow run so it appears
+    # in the UI and can be registered via the "Register Model" button. Gated by
+    # training.mlflow_log_model. Must run BEFORE finish_mlflow ends the run.
+    if best_ckpt:
+        log_model_artifact(config, best_ckpt)
+
     finish_wandb()
     finish_mlflow()
     logger.info("Done.")

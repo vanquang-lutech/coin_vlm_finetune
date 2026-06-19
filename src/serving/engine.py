@@ -75,6 +75,10 @@ class VLLMCoinEngine:
             limit_mm_per_prompt={"image": serving.get("limit_mm_per_prompt_image", 1)},
             mm_processor_kwargs=mm_processor_kwargs or None,
             seed=serving.get("seed", 42),
+            # Keep stat logging ON so the vllm:* Prometheus metrics (latency,
+            # throughput, KV-cache usage, queue depth) publish to the default
+            # registry that the app's /metrics endpoint scrapes.
+            disable_log_stats=False,
         )
         self.engine = AsyncLLMEngine.from_engine_args(engine_args)
         self._sampling_params = self._build_sampling_params()

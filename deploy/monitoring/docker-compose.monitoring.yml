@@ -1,0 +1,50 @@
+# Docker-compose monitoring stack (FALLBACK / portable option).
+#
+# NOTE: on the project's serving box the firewall blocks Docker Hub and the
+# installed Compose V1 is broken (see the MLflow setup), so the NATIVE path
+# (run_monitoring.sh) is the primary deployment. Use this compose file on a
+# machine that can pull images.
+#
+#   docker compose -f deploy/monitoring/docker-compose.monitoring.yml up -d
+#
+# Prometheus scrapes the serving API on the HOST. From inside the Prometheus
+# container, "localhost" is the container itself, so prometheus.yml must target
+# the host. On Docker Desktop that is host.docker.internal (mapped below); on
+# Linux pass the host's LAN IP or run with network_mode: host.
+services:
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: coin-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: coin-grafana
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+
+volumes:
+  prometheus-data:
+  grafana-data:

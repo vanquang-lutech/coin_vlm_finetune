@@ -2,6 +2,8 @@
 
 Endpoints:
   GET  /health            liveness + which checkpoint is loaded
+  GET  /metrics           Prometheus exposition (vllm:* engine metrics + coin_*
+                          app metrics). Mounted only when serving.metrics.enabled.
   POST /predict           multipart upload of TWO images (obverse + reverse)
                           -> {year, mint_mark, raw, parse_ok}. The two images are
                           enhanced, resized to fit, and concatenated side-by-side
@@ -19,6 +21,7 @@ from datetime import datetime, timezone
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 
+from src.serving import metrics as M
 from src.serving.engine import VLLMCoinEngine
 from src.serving.schemas import CoinPrediction, HealthResponse
 from src.utils import dated_log_path, get_logger
@@ -67,6 +70,12 @@ def create_app(config) -> FastAPI:
     max_upload_bytes = int(max_upload_mb * 1024 * 1024) if max_upload_mb else 0
     request_timeout_s = serving.get("request_timeout_s", 60)
 
+    # Prometheus /metrics. The vLLM engine publishes vllm:* metrics to the
+    # default registry; this just surfaces them (plus the coin_* app metrics).
+    metrics_cfg = serving.get("metrics", {}) or {}
+    metrics_enabled = metrics_cfg.get("enabled", True)
+    metrics_path = metrics_cfg.get("path", "/metrics")
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         logger.info("Starting vLLM coin engine...")
@@ -88,6 +97,11 @@ def create_app(config) -> FastAPI:
         version="1.0.0",
         lifespan=lifespan,
     )
+
+    if metrics_enabled:
+        # Sub-app on the default registry: scrapes vllm:* (engine) + coin_* (app).
+        app.mount(metrics_path, M.metrics_app())
+        logger.info("Prometheus metrics exposed at %s", metrics_path)
 
     @app.middleware("http")
     async def add_process_time_header(request, call_next):
@@ -137,50 +151,69 @@ def create_app(config) -> FastAPI:
         obverse: UploadFile = File(..., description="Obverse (front) coin image."),
         reverse: UploadFile = File(..., description="Reverse (back) coin image."),
     ):
-        engine: VLLMCoinEngine = state.get("engine")
-        if engine is None:
-            raise HTTPException(status_code=503, detail="Engine not ready.")
-
-        obv = await _read_image(obverse, "obverse")
-        rev = await _read_image(reverse, "reverse")
-        names = f"{obverse.filename}|{reverse.filename}"
-
-        start = time.perf_counter()
+        req_start = time.perf_counter()
+        M.INFLIGHT.inc()
         try:
-            if request_timeout_s:
-                result = await asyncio.wait_for(
-                    engine.predict(obv, rev), timeout=request_timeout_s
+            engine: VLLMCoinEngine = state.get("engine")
+            if engine is None:
+                M.REQUESTS_TOTAL.labels(status="unavailable").inc()
+                raise HTTPException(status_code=503, detail="Engine not ready.")
+
+            try:
+                obv = await _read_image(obverse, "obverse")
+                rev = await _read_image(reverse, "reverse")
+            except HTTPException:
+                M.REQUESTS_TOTAL.labels(status="bad_request").inc()
+                raise
+            M.UPLOAD_MB.observe(len(obv) / 1024 / 1024)
+            M.UPLOAD_MB.observe(len(rev) / 1024 / 1024)
+            names = f"{obverse.filename}|{reverse.filename}"
+
+            start = time.perf_counter()
+            try:
+                if request_timeout_s:
+                    result = await asyncio.wait_for(
+                        engine.predict(obv, rev), timeout=request_timeout_s
+                    )
+                else:
+                    result = await engine.predict(obv, rev)
+            except asyncio.TimeoutError:
+                M.REQUESTS_TOTAL.labels(status="timeout").inc()
+                logger.warning("Prediction timed out (%ss) for %s", request_timeout_s, names)
+                pred_log.write({"files": names, "error": f"timeout>{request_timeout_s}s"})
+                raise HTTPException(
+                    status_code=504,
+                    detail=f"Prediction timed out after {request_timeout_s}s.",
                 )
-            else:
-                result = await engine.predict(obv, rev)
-        except asyncio.TimeoutError:
-            logger.warning("Prediction timed out (%ss) for %s", request_timeout_s, names)
-            pred_log.write({"files": names, "error": f"timeout>{request_timeout_s}s"})
-            raise HTTPException(
-                status_code=504,
-                detail=f"Prediction timed out after {request_timeout_s}s.",
+            except Exception as exc:  # noqa: BLE001 - surface as a clean 500
+                M.REQUESTS_TOTAL.labels(status="error").inc()
+                logger.exception("Prediction failed for %s", names)
+                pred_log.write({"files": names, "error": str(exc)})
+                raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+            M.PREDICT_LATENCY.observe(time.perf_counter() - start)
+            M.REQUESTS_TOTAL.labels(status="ok").inc()
+            M.record_prediction(result)
+
+            latency_ms = round((time.perf_counter() - start) * 1000, 1)
+            logger.info(
+                "predict files=%s year=%s mint_mark=%s parse_ok=%s latency_ms=%s",
+                names, result.get("year"), result.get("mint_mark"),
+                result.get("parse_ok"), latency_ms,
             )
-        except Exception as exc:  # noqa: BLE001 - surface as a clean 500
-            logger.exception("Prediction failed for %s", names)
-            pred_log.write({"files": names, "error": str(exc)})
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
+            pred_log.write({
+                "obverse": obverse.filename,
+                "reverse": reverse.filename,
+                "year": result.get("year"),
+                "mint_mark": result.get("mint_mark"),
+                "parse_ok": result.get("parse_ok"),
+                "raw": result.get("raw"),
+                "latency_ms": latency_ms,
+            })
 
-        latency_ms = round((time.perf_counter() - start) * 1000, 1)
-        logger.info(
-            "predict files=%s year=%s mint_mark=%s parse_ok=%s latency_ms=%s",
-            names, result.get("year"), result.get("mint_mark"),
-            result.get("parse_ok"), latency_ms,
-        )
-        pred_log.write({
-            "obverse": obverse.filename,
-            "reverse": reverse.filename,
-            "year": result.get("year"),
-            "mint_mark": result.get("mint_mark"),
-            "parse_ok": result.get("parse_ok"),
-            "raw": result.get("raw"),
-            "latency_ms": latency_ms,
-        })
-
-        return CoinPrediction(**result)
+            return CoinPrediction(**result)
+        finally:
+            M.INFLIGHT.dec()
+            M.REQUEST_LATENCY.observe(time.perf_counter() - req_start)
 
     return app

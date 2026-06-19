@@ -1,0 +1,16 @@
+# Grafana dashboard provider: load every dashboard JSON from the path below at
+# startup, so the coin serving dashboard appears without manual import.
+apiVersion: 1
+
+providers:
+  - name: coin-vlm
+    orgId: 1
+    folder: "Coin VLM"
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      # docker-compose mounts the dashboards here; the native script points
+      # GF_PATHS to the same JSON via this provider file (path rewritten there).
+      path: /etc/grafana/dashboards

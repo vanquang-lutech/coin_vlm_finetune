@@ -1,0 +1,21 @@
+# Prometheus scrape config for the coin VLM serving API.
+#
+# The serving app (scripts/serve.py) exposes vllm:* (engine) + coin_* (app)
+# metrics at {serving.host}:{serving.port}{serving.metrics.path}. By default
+# that is :49710/metrics (see config/serving/serving.yaml).
+#
+# Edit the target below to match the host/port you serve on. When Prometheus
+# runs natively on the SAME box as the API, "localhost:49710" works. When it
+# runs in Docker, use "host.docker.internal:49710" (Docker Desktop) or the
+# host's LAN IP.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: coin-vlm-serving
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["localhost:49710"]
+        labels:
+          service: coin-vlm

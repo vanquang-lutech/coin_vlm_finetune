@@ -1,0 +1,15 @@
+# Grafana datasource provisioning: auto-wire the Prometheus started alongside.
+#
+# The URL must be reachable FROM the Grafana process:
+#   - native (Grafana + Prometheus on same box): http://localhost:9090
+#   - docker-compose: http://prometheus:9090 (the compose service name)
+# The native run script (run_monitoring.sh) rewrites this to localhost:9090.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true

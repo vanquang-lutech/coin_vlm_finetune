@@ -73,3 +73,12 @@ serving:
   log_dir: "outputs/logs/serving"
   log_rotation: "daily"
   predictions_log: true
+
+  # Prometheus metrics. When enabled, `path` exposes the default registry in
+  # Prometheus text format: the engine's vllm:* metrics (latency, throughput,
+  # KV-cache usage, queue depth, TTFT) plus the app's coin_* metrics (request
+  # latency/error breakdown, in-flight, parse-rate, per-field null-rate).
+  # Point a Prometheus server (see deploy/monitoring/) at {host}:{port}{path}.
+  metrics:
+    enabled: true
+    path: "/metrics"
