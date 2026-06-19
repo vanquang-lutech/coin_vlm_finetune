@@ -20,5 +20,8 @@ prompt:
       If you see a mark that is NOT in this list (e.g. a foreign coin),
       output null - do not guess one of the 7 values.
 
-    Respond with a single JSON object, nothing else:
-    {"year": "YYYY" or null, "mint_mark": <one of the 7 marks> or null}
+    Respond with a single JSON object and nothing else. Use the bare value
+    null (not "null", not "") when a field is not visible. Examples:
+    {"year": "1999", "mint_mark": "D"}
+    {"year": "1961", "mint_mark": null}
+    {"year": null, "mint_mark": "D"}
