@@ -1,7 +1,15 @@
 import argparse
+import os
 import sys
 from pathlib import Path
- 
+
+# Disable TorchDynamo before any torch import. Standalone eval never benefits
+# from compile (generation is forced eager anyway), and on the unsloth backend
+# the compiled generate path recompiles per prompt-length and leaks host RAM.
+# Must precede the src.* imports below, which pull in torch transitively.
+# Re-enable compile by exporting TORCHDYNAMO_DISABLE=0.
+os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
  
 from src.utils import ConfigLoader, get_logger, set_seed

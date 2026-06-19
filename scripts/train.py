@@ -1,6 +1,19 @@
+import os
+
+# Disable TorchDynamo for the whole job. Hybrid linear-attn models (Qwen3.5
+# Gated DeltaNet) recompile causal_conv1d per prompt-length during the periodic
+# in-training generation eval; on the unsloth backend that path ignores the
+# evaluator's set_stance("force_eager") guard, and the accumulated recompiles
+# leak host RAM until the process is OOM-killed (this is a host-RAM, not GPU,
+# OOM). Disabling dynamo trades the training compile speedup for a flat host-RAM
+# profile. Must be set BEFORE torch/unsloth import or torch._dynamo reads the
+# old value. Re-enable compile by exporting TORCHDYNAMO_DISABLE=0.
+os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")
+
 # Unsloth MUST be imported before transformers/peft (which the src.* imports
 # below pull in transitively) so all of its patches/optimizations — including
-# memory savings — are applied. Keep this as the very first import.
+# memory savings — are applied. Keep this as the first heavy import (the env
+# set above only touches os, so unsloth's patches still apply correctly).
 import unsloth  # noqa: E402,F401
 
 import argparse
