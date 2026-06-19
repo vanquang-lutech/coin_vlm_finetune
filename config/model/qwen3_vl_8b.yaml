@@ -1,16 +1,19 @@
 name: "Qwen/Qwen3-VL-8B-Instruct"
 model_name: "Qwen/Qwen3-VL-8B-Instruct"
-unsloth_name: "/data/models/Qwen3-VL-8B-unsloth"
+unsloth_name: "/data/coin/coin_vlm_finetune/data/models/Qwen3-VL-8B-unsloth"
 trust_remote_code: true
 torch_dtype: "bfloat16"
 device_map: "auto"
 attn_implementation: "flash_attention_2"
 gradient_checkpointing: true
-max_seq_length: 2048
- 
+max_seq_length: 2560
+
+# Kept in sync with config/inference/inference.yaml's processor block (that one
+# is what actually takes effect; this is the per-model fallback). Raised for
+# fine-detail coin reading.
 processor:
-  min_pixels: 512
-  max_pixels: 1280
+  min_pixels: 768
+  max_pixels: 2048
 
 prompt:
   system: "You are a coin expert."

@@ -113,19 +113,31 @@ class UnslothModelLoader(BaseModelLoader):
         if lora_config is None:
             lora_config = self.config.model.get("lora", None)
 
-        # target_modules may be the string "all-linear" (let Unsloth's
-        # get_peft_regex discover EVERY Linear in both towers — driven by the
-        # finetune_* flags below) OR an explicit list of name suffixes. A list
-        # is fine to list(); a string must NOT be list()'d or "all-linear"
-        # explodes into individual characters.
-        tm = lora_config.target_modules
-        target_modules = tm if isinstance(tm, str) else list(tm)
+        # How LoRA target modules are chosen — THREE modes:
+        #   null / None    -> pass target_modules=None so Unsloth's get_peft_regex
+        #                     selects modules FROM the finetune_* flags below. This
+        #                     is the ONLY mode that honors a flag set to False, so
+        #                     it is REQUIRED for selective finetuning (e.g. freezing
+        #                     the language tower for vision-only training).
+        #   "all-linear"   -> PEFT structurally targets EVERY nn.Linear in the whole
+        #                     model. Robust (covers odd vision / Qwen3.5 DeltaNet
+        #                     names) BUT it OVERRIDES the finetune_* flags — both
+        #                     towers train regardless of what the flags say.
+        #   explicit list  -> name suffixes used verbatim (flags ignored).
+        # A list must be list()'d; a string must NOT (or "all-linear" explodes into
+        # individual characters).
+        tm = lora_config.get("target_modules", None)
+        if tm is None:
+            target_modules = None
+        elif isinstance(tm, str):
+            target_modules = tm
+        else:
+            target_modules = list(tm)
 
-        # Which sub-networks LoRA adapts. Default True (finetune both towers),
-        # now config-controllable. IMPORTANT: these flags only take effect when
-        # target_modules == "all-linear"; with an explicit list Unsloth uses the
-        # list verbatim and ignores them (so an explicit list that names no
-        # vision modules silently leaves the vision tower frozen).
+        # Which sub-networks LoRA adapts. IMPORTANT: these flags ONLY take effect
+        # when target_modules is null/None (flag-driven get_peft_regex). With
+        # "all-linear" or an explicit list Unsloth ignores them — so to FREEZE a
+        # tower you MUST set target_modules: null (not "all-linear").
         finetune_vision_layers = lora_config.get("finetune_vision_layers", True)
         finetune_language_layers = lora_config.get("finetune_language_layers", True)
         finetune_attention_modules = lora_config.get("finetune_attention_modules", True)
@@ -135,7 +147,9 @@ class UnslothModelLoader(BaseModelLoader):
             "Applying Unsloth LoRA (r=%d, target_modules=%s, vision=%s "
             "language=%s attn=%s mlp=%s)...",
             lora_config.r,
-            target_modules if isinstance(target_modules, str) else f"{len(target_modules)} names",
+            "flag-driven (None)" if target_modules is None
+            else target_modules if isinstance(target_modules, str)
+            else f"{len(target_modules)} names",
             finetune_vision_layers, finetune_language_layers,
             finetune_attention_modules, finetune_mlp_modules,
         )
@@ -189,5 +203,6 @@ class UnslothModelLoader(BaseModelLoader):
             logger.warning(
                 "[LoRA coverage] NO vision modules received LoRA — the vision "
                 "tower is effectively FROZEN. If you intended to finetune vision, "
-                "set target_modules='all-linear' with finetune_vision_layers=true."
+                "set target_modules: null with finetune_vision_layers=true "
+                "(flag-driven), or target_modules='all-linear' to train both towers."
             )

@@ -1,16 +1,19 @@
 # Qwen3.5-9B (unified vision-language; the family has no "-VL" suffix).
-# Pre-fetch weights locally on a no-egress box:
+# Train runs with HF_HUB_OFFLINE=1, so the weights must be pre-fetched to a
+# local dir (run this on a box WITH egress):
 #   python scripts/download_model.py --repo unsloth/Qwen3.5-9B --out /data/models/Qwen3.5-9B
-# then point name/model_name/unsloth_name at that local dir.
-name: "unsloth/Qwen3.5-9B"
-model_name: "unsloth/Qwen3.5-9B"
-unsloth_name: "unsloth/Qwen3.5-9B"
+# name/model_name/unsloth_name therefore point at that LOCAL dir, not the Hub
+# repo id. On a box with egress, set them back to "unsloth/Qwen3.5-9B".
+# NOTE: adjust the path below to wherever the weights were actually downloaded.
+name: "/data/models/Qwen3.5-9B"
+model_name: "/data/models/Qwen3.5-9B"
+unsloth_name: "/data/models/Qwen3.5-9B"
 trust_remote_code: true
 torch_dtype: "bfloat16"
 device_map: "auto"
 attn_implementation: "flash_attention_2"
 gradient_checkpointing: true
-max_seq_length: 2048
+max_seq_length: 2560
 
 # Matched to qwen3.5_4b.yaml so 9B vs 4B is an apples-to-apples comparison and
 # so mint-marks are seen at full resolution. On A100-40GB this raises peak VRAM
@@ -18,8 +21,8 @@ max_seq_length: 2048
 # per_device_train/eval_batch_size (raise gradient_accumulation_steps to keep
 # the effective batch) BEFORE lowering these pixels.
 processor:
-  min_pixels: 512
-  max_pixels: 1280
+  min_pixels: 768
+  max_pixels: 2048
 
 # Identical prompt to qwen3.5_4b.yaml — required for a fair 9B-vs-4B comparison.
 prompt:

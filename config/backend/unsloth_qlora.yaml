@@ -9,20 +9,23 @@ model:
     lora_alpha: 32
     lora_dropout: 0.0
     # VISION-ONLY finetuning: adapt the vision tower (+ merger), FREEZE the
-    # language model. "all-linear" lets Unsloth's get_peft_regex discover every
-    # Linear in the vision encoder (attn qkv/proj, vision MLP, patch-merger) —
-    # names an explicit q_proj/... list would MISS. The finetune_* flags drive
-    # the selection (they ONLY take effect with "all-linear").
+    # language model.
     #
-    # Why freeze the LM: training broadly over the LM (finetune_language_layers
-    # =true) overfits it to the fixed training prompt and erodes the base
-    # model's instruction-following — it then echoes the eval prompt's JSON
-    # skeleton instead of answering. Freezing the LM keeps Qwen3-VL-Instruct's
-    # formatting/instruction-following intact, while gradient still flows THROUGH
-    # the frozen LM into the vision adapters (so vision is optimized end-to-end
-    # to read the coin). Verify with the "[LoRA coverage]" log line:
-    # expect vision adapters>0 and language adapters=0.
-    target_modules: "all-linear"
+    # target_modules MUST be null here (NOT "all-linear"): null tells the loader
+    # to pass target_modules=None so Unsloth's get_peft_regex selects modules
+    # from the finetune_* flags below. "all-linear" would structurally target
+    # EVERY Linear and OVERRIDE finetune_language_layers=false — i.e. it would
+    # silently keep training the LM (confirmed: identical trainable-param count
+    # whether the flag was true or false).
+    #
+    # Why freeze the LM: training broadly over the LM overfits it to the fixed
+    # training prompt and erodes the base model's instruction-following.
+    # Freezing it keeps Qwen3-VL-Instruct's formatting intact, while gradient
+    # still flows THROUGH the frozen LM into the vision adapters (vision is
+    # optimized end-to-end to read the coin). Verify on the first run via the
+    # "[LoRA coverage]" log line: expect vision adapters>0 and language adapters=0,
+    # and Trainable parameters should DROP well below the ~51M of the both-towers run.
+    target_modules: null
     finetune_vision_layers: true
     finetune_language_layers: false
     finetune_attention_modules: true

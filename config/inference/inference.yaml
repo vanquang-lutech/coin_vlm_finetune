@@ -5,9 +5,15 @@ generation:
   repetition_penalty: 1.0
   do_sample: false
 
+# NOTE: this top-level processor block is the EFFECTIVE one for BOTH training
+# and eval (loader + evaluator read config.processor before config.model.processor).
+# Raised for fine detail (year digits / mint marks are tiny on the coin).
+# max_pixels ~= number of vision tokens; keep training.max_seq_length above it
+# (+ ~250 text tokens) or the processor truncates image tokens and Qwen raises a
+# token-count mismatch. Keep config/model/qwen3_vl_8b.yaml processor in sync.
 processor:
-  min_pixels: 512
-  max_pixels: 1280
+  min_pixels: 768
+  max_pixels: 2048
 
 
 prompt:
