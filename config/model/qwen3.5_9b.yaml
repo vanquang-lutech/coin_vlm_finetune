@@ -24,6 +24,32 @@ processor:
   min_pixels: 768
   max_pixels: 2048
 
+# W4A16 export (scripts/export.py --mode awq). Quantize ONLY the large
+# language-model Linear layers; keep vision, the MTP head, and the tiny
+# linear-attention gating projection at full precision. Verified against
+# unsloth/Qwen3.5-9B's config.json + weight map:
+#   model.visual.* / .merger.*  -> vision encoder + projector. Quantizing these
+#                                  hurts digit / mint-mark reading (re:.*visual.*).
+#   mtp.* (mtp_num_hidden_layers=1, unsloth_fixed_mtp) -> Multi-Token Prediction
+#                                  head. An image->text calibration forward never
+#                                  exercises it, so AWQ can't derive reliable
+#                                  scales, and MTP speculative decoding barely
+#                                  helps for short year+mint outputs.
+#   *.in_proj_ba  -> GatedDeltaNet beta/alpha gating projection. Its output dim is
+#                    tiny (the layer hit by vLLM #35924's Marlin MIN_THREAD_N=64
+#                    constraint). Int4 here saves almost no VRAM but risks the
+#                    delta-rule recurrence -> keep bf16. The big linear-attn
+#                    projections (in_proj_qkvz ~12k, out_proj ~4k) ARE quantized;
+#                    conv1d is Conv1d so AWQ (targets=["Linear"]) skips it.
+export:
+  modifier: "awq"
+  ignore:
+    - "lm_head"
+    - "re:.*visual.*"        # vision tower (model.visual.*) AND merger
+    - "re:.*merger.*"        # defensive; merger already under model.visual
+    - "re:.*mtp.*"           # Multi-Token Prediction head -> keep out of W4A16
+    - "re:.*in_proj_ba.*"    # tiny GatedDeltaNet gating proj (vLLM #35924)
+
 # Identical prompt to qwen3.5_4b.yaml — required for a fair 9B-vs-4B comparison.
 prompt:
   system: "You are a coin expert."
