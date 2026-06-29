@@ -8,10 +8,10 @@ checkpoint produced by scripts/export.py.
 Example:
     python scripts/serve.py \
         --data_config config/data/coin_dataset.yaml \
-        --model_config config/model/qwen3_vl_8b.yaml \
+        --model_config config/model/qwen3.5_9b.yaml \
         --training_config config/training/training.yaml \
         --serving_config config/serving/serving.yaml \
-        --override serving.model_path=outputs/merged_models/coin-vlm-awq
+        --override serving.model_path=outputs/merged_models/Qwen3.5-9B-coin-merged
 """
 
 import argparse

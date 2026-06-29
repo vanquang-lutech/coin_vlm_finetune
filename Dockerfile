@@ -13,32 +13,42 @@
 #
 # Run (GPU 3, model + logs mounted from host):
 #   docker run --rm --gpus '"device=3"' -p 49710:49710 \
-#     -v /data/coin/coin_vlm_finetune/data/models/Qwen3-VL-8B-coin-awq:/models/coin-awq:ro \
+#     -v /data/coin/coin_vlm_finetune/data/models/Qwen3.5-9B-coin-merged:/models/coin-merged:ro \
 #     -v /data/coin/coin_vlm_finetune/outputs/logs/serving:/logs \
 #     coin-vlm-serve
-FROM docker.m.daocloud.io/nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04
+FROM docker.m.daocloud.io/nvidia/cuda:12.9.1-cudnn-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
     HF_HUB_OFFLINE=1 \
-    TRANSFORMERS_OFFLINE=1
+    TRANSFORMERS_OFFLINE=1 \
+    CC=gcc
 
+# gcc/g++ + python3-dev are needed AT RUNTIME, not just to build the image:
+# vLLM's Qwen3.5 vision tower applies rotary embeddings via a Triton kernel
+# that Triton JIT-compiles on first use, and Triton needs a C compiler (+Python.h)
+# to build its CUDA utils module. Without a compiler the engine core dies during
+# profile_run with "Failed to find C compiler" -> "Failed core proc(s): {}".
+# DO NOT drop these to slim the image.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         python3 python3-pip python3-dev \
+        gcc g++ \
         libglib2.0-0 libgomp1 \
     && ln -sf /usr/bin/python3 /usr/bin/python \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# 1) vLLM CUDA-12 build (PyPI default for <0.20) + matching torch (cu128).
-#    Pinned <0.20 so we never pull the CUDA-13 default that needs a newer driver.
+# 1) vLLM 0.23 (exposes Qwen3_5ForConditionalGeneration; needs >=0.17) on a
+#    CUDA-12.9 torch backend, matching the verified native server env
+#    (vllm 0.23.0 / torch 2.11.0+cu129). The cu129 extra-index makes pip resolve
+#    the +cu129 torch wheel instead of the CUDA-13 default that needs a newer driver.
 #    Needs PyPI + download.pytorch.org reachable during build (NOT github).
 RUN python -m pip install --upgrade pip \
- && python -m pip install "vllm>=0.11,<0.20" \
-        --extra-index-url https://download.pytorch.org/whl/cu128
+ && python -m pip install "vllm==0.23.0" \
+        --extra-index-url https://download.pytorch.org/whl/cu129
 
 # 2) Serving dependencies.
 COPY requirements-serve.txt .
@@ -54,11 +64,11 @@ EXPOSE 49710
 # model_path -> the mount point; logs -> mounted volume; ngrok off in containers.
 CMD ["python", "scripts/serve.py", \
      "--data_config", "config/data/coin_dataset.yaml", \
-     "--model_config", "config/model/qwen3_vl_8b.yaml", \
+     "--model_config", "config/model/qwen3.5_9b.yaml", \
      "--training_config", "config/training/training.yaml", \
      "--serving_config", "config/serving/serving.yaml", \
      "--override", \
-     "serving.model_path=/models/coin-awq", \
+     "serving.model_path=/models/coin-merged", \
      "serving.log_dir=/logs", \
      "serving.ngrok.enabled=false", \
      "serving.host=0.0.0.0"]

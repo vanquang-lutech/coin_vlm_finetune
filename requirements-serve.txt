@@ -1,31 +1,44 @@
-# Minimal dependencies for scripts/serve.py.
+# Minimal dependencies for scripts/serve.py — serving Qwen3.5-9B with vLLM.
 #
-# Use a fresh serving environment. Do not install the training requirements
-# first, because requirements.txt pins a training torch build that can conflict
-# with vLLM's compiled CUDA extension.
+# Use a fresh serving environment (conda env `coin-vlm-serve`). Do NOT install the
+# training requirements first: requirements.txt pins a training torch build that
+# conflicts with vLLM's compiled CUDA extension (and with numpy 2.x below).
 #
-# Recommended install:
+# Recommended install (matches the verified A100 server env):
+#   uv pip install vllm==0.23.0 --torch-backend=auto   # pulls torch 2.11.0+cu129
 #   uv pip install -r requirements-serve.txt
-#   uv pip install vllm --torch-backend=auto
+#
+# Notes for the server (CUDA 12.x driver):
+#   - vLLM 0.23 brings its own torch 2.11.0+cu129; do NOT `pip install torch==...`
+#     separately or a cu130 wheel will import but disable CUDA ("driver too old").
+#   - Qwen3.5 (Qwen3_5ForConditionalGeneration) requires vllm>=0.17 and
+#     transformers>=5.x. compressed-tensors loads the W4A16 checkpoint and ships
+#     as a vLLM dependency (0.17.0 in the verified env).
 
-numpy>=1.26.4,<2.0.0
-Pillow>=10.0.0
-opencv-python-headless>=4.10.0.84   # headless: no libGL needed (server/Docker)
+# vLLM provides the inference engine. Install via --torch-backend (see header) so
+# torch/CUDA wheels match the server; this pin documents the verified version.
+vllm>=0.23.0
+
+# numpy 2.x is REQUIRED by vllm 0.23 + torch 2.11 (do not cap below 2.0).
+numpy>=2.0.0
+Pillow>=11.0.0
+opencv-python-headless>=4.13.0   # headless: no libGL needed (server/Docker)
 
 omegaconf>=2.3.0
 python-dotenv>=1.0.0
 pyyaml>=6.0
 
-transformers>=4.57.0
+# Qwen3.5 model code lives in transformers 5.x.
+transformers>=5.10.0
 
 # Pulled transitively by src.data / src.evaluate __init__ (the serving engine
 # imports parse_response + CoinEnhancer, which load these packages' __init__).
 datasets>=3.0.0
 tqdm>=4.66.0
 
-fastapi>=0.110.0
-uvicorn[standard]>=0.29.0
-python-multipart>=0.0.9
+fastapi>=0.115.0
+uvicorn[standard]>=0.49.0
+python-multipart>=0.0.32
 pyngrok>=7.0.0
 
 # /metrics endpoint (Prometheus exposition). The vLLM engine already publishes

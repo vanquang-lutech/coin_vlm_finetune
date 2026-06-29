@@ -1,10 +1,22 @@
---extra-index-url https://download.pytorch.org/whl/cu124
+# Training environment. Target: Linux + NVIDIA driver >= 525 (CUDA 12.x).
+# torch 2.8 ships cu126/cu128 wheels (cu124 was dropped after torch 2.6).
+# cu128 runs fine on a CUDA 12.4 driver via CUDA minor-version compatibility,
+# and matches the xformers wheels published on PyPI for torch 2.8.
+--extra-index-url https://download.pytorch.org/whl/cu128
 
-torch==2.4.1+cu124
-torchvision==0.19.1+cu124
+torch==2.8.0+cu128
+torchvision==0.23.0+cu128
 
-numpy>=1.26.4,<2.0.0
-sympy==1.13.3
+# torch-coupled accelerators (versions must match torch 2.8):
+xformers==0.0.32.post2
+# unsloth_zoo 2026.6.x resolves torchao 0.17 against torch 2.10; cap below that
+# so it stays on a torch-2.8 build.
+torchao>=0.13.0,<0.17.0    # required by unsloth_zoo; 0.13 is built for torch 2.8
+
+# numpy 2 is fine across torch 2.8, opencv>=4.10, scikit-image>=0.24, scikit-learn>=1.5.
+# The v5 stack (datasets 4.3 / pandas 3.0) pulls numpy 2.x, so the old <2 cap is lifted.
+numpy>=1.26.4,<3.0.0
+sympy>=1.13.3
 psutil>=5.9.8
 packaging>=24.0
 typing_extensions>=4.12.0
@@ -13,18 +25,34 @@ fsspec>=2024.6.0
 networkx>=3.2.1
 jinja2>=3.1.4
 
-transformers>=4.46.0,<4.50.0
-datasets>=3.0.0,<4.0.0
-accelerate>=1.0.0,<2.0.0
-peft>=0.13.0,<0.15.0
-trl>=0.12.0,<0.13.0
-huggingface_hub>=0.25.0,<1.0.0
+# Versions below track unsloth 2026.6.x's hard pins for the transformers v5 stack.
+# transformers v5 (>=5.2) is REQUIRED for Qwen3.5; older v4.x raises
+# "transformers ... does not support Qwen3.5. Minimum required version is 5.2.0".
+# transformers 5.x still supports Qwen3-VL, so this single env serves both models.
+# unsloth 2026.6.1 caps transformers<=5.5.0 and excludes 5.0.0/5.1.0 (we floor at 5.2).
+transformers>=5.2.0,<=5.5.0
+# unsloth 2026.6.x requires datasets !=4.0.*,!=4.1.0,<4.4.0 (resolves to 4.3.0).
+datasets>=3.4.1,!=4.0.*,!=4.1.0,<4.4.0
+# transformers v5 requires accelerate>=1.1.0.
+accelerate>=1.1.0,<2.0.0
+peft>=0.18.0
+# unsloth 2026.6.1 still caps trl<=0.24.0 (NOT 0.27) even on transformers 5.5.
+trl>=0.18.2,!=0.19.0,<=0.24.0
+# transformers v5 ships huggingface_hub v1; the old <1.0 cap blocks the whole stack.
+huggingface_hub>=1.0.0,<2.0.0
 sentencepiece>=0.2.0
-protobuf>=5.28.0,<6.0.0
-safetensors>=0.4.5
-tokenizers>=0.20.0
+# v5 closure pulls protobuf 7.x; lift the <6 cap so the resolver doesn't conflict.
+protobuf>=5.28.0,<8.0.0
+# cap below 0.8.0 so the resolver doesn't backtrack onto the 0.8.0rc1 pre-release.
+safetensors>=0.4.5,<0.8.0
+# transformers v5 requires tokenizers>=0.22.0,<=0.23.0.
+tokenizers>=0.22.0,<=0.23.0
 
-bitsandbytes>=0.44.0,<0.46.0
+# transformers v5 4-bit path requires bitsandbytes>=0.46.1 (resolves to 0.49.2).
+bitsandbytes>=0.46.1,!=0.48.0
+
+unsloth>=2026.6.1
+unsloth_zoo>=2026.6.1
 
 Pillow>=10.0.0
 opencv-python>=4.10.0.84

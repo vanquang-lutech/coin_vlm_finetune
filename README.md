@@ -160,6 +160,8 @@ python scripts/export.py \
 
 Serve a merged (+ optionally AWQ-quantized) checkpoint behind a FastAPI API.
 vLLM loads the model once at startup and the engine is shared across requests.
+For the Qwen3.5-specific command sequence, see
+`docs/serve_qwen35_vllm.md`.
 
 First produce a servable checkpoint (merge, then optionally quantize):
 
@@ -185,6 +187,30 @@ pip install uv
 uv pip install -r requirements-serve.txt
 uv pip install vllm --torch-backend=auto
 ```
+
+Do not manually upgrade torch in this env unless you also choose a wheel matching
+the server driver. On a host whose driver reports CUDA `12.4`, a torch wheel
+built for CUDA `13.0` imports but CUDA stays unavailable with:
+
+```text
+UserWarning: CUDA initialization: The NVIDIA driver on your system is too old
+...
+2.11.0+cu130 | cuda 13.0 | avail False
+```
+
+Recover by recreating the serving env, or uninstall the mismatched stack and let
+`uv` pick a CUDA-12 backend:
+
+```bash
+python -m pip uninstall -y torch torchvision torchaudio vllm xformers triton
+uv pip install -r requirements-serve.txt
+uv pip install "vllm==0.19.1" --torch-backend=cu128
+python -c "import torch; print(torch.__version__, '| cuda', torch.version.cuda, '| avail', torch.cuda.is_available())"
+```
+
+Expected result: `torch.version.cuda` is `12.x` and `torch.cuda.is_available()`
+is `True`. If it still prints `+cu130` / CUDA `13.0`, the old torch wheel is
+still winning in the environment.
 
 Point `serving.model_path` at the result and launch:
 
