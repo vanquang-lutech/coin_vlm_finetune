@@ -41,14 +41,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# 1) vLLM 0.23 (exposes Qwen3_5ForConditionalGeneration; needs >=0.17) on a
-#    CUDA-12.9 torch backend, matching the verified native server env
-#    (vllm 0.23.0 / torch 2.11.0+cu129). The cu129 extra-index makes pip resolve
-#    the +cu129 torch wheel instead of the CUDA-13 default that needs a newer driver.
-#    Needs PyPI + download.pytorch.org reachable during build (NOT github).
-RUN python -m pip install --upgrade pip \
- && python -m pip install "vllm==0.23.0" \
-        --extra-index-url https://download.pytorch.org/whl/cu129
+# 1) vLLM 0.23 built for CUDA 12.9, matching the verified native env
+#    (vllm 0.23.0+cu129 / torch 2.11.0+cu129). MUST use the +cu129 RELEASE WHEEL
+#    from GitHub — `pip install vllm` pulls PyPI's CUDA-13 wheel, whose vllm._C
+#    needs libcudart.so.13 (absent here) -> "ImportError: libcudart.so.13".
+#    --torch-backend/extra-index only retarget torch, not vLLM, so they don't fix
+#    it. If github is blocked at build time, pass --build-arg
+#    VLLM_WHEEL_URL=<proxied .whl url> (e.g. https://ghfast.top/https://github.com/...).
+ARG VLLM_VERSION=0.23.0
+ARG VLLM_CUDA=129
+ARG VLLM_WHEEL_URL=
+RUN set -eux; \
+    python -m pip install --upgrade pip uv; \
+    arch="$(uname -m)"; \
+    wheel_url="$VLLM_WHEEL_URL"; \
+    if [ -z "$wheel_url" ]; then \
+        wheel_url="https://github.com/vllm-project/vllm/releases/download/v${VLLM_VERSION}/vllm-${VLLM_VERSION}+cu${VLLM_CUDA}-cp38-abi3-manylinux_2_35_${arch}.whl"; \
+    fi; \
+    uv pip install --system --index-url "$PIP_INDEX_URL" \
+        "$wheel_url" \
+        --extra-index-url "https://download.pytorch.org/whl/cu${VLLM_CUDA}" \
+        --torch-backend="cu${VLLM_CUDA}"
 
 # 2) Serving dependencies.
 COPY requirements-serve.txt .
