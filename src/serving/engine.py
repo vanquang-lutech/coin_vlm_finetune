@@ -298,7 +298,8 @@ class VLLMCoinEngine:
     async def predict(self, obverse, reverse) -> dict:
         """Run an obverse+reverse coin pair through vLLM and return the parsed
         result. Reproduces the training/production preprocessing: enhance each
-        image (CLAHE+unsha
+        image (CLAHE+unsharp), resize_to_fit each, then concatenate them
+        side-by-side into the single image the model was trained on."""
         img1 = self._prep_one(obverse)
         img2 = self._prep_one(reverse)
         combined = self._concat(img1, img2)
@@ -323,5 +324,3 @@ class VLLMCoinEngine:
             "raw": response,
             "parse_ok": parsed is not None,
         }
-rp), resize_to_fit each, then concatenate them
-        side-by-side into the single image the model was trained on."""
