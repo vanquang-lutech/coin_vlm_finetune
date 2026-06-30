@@ -86,6 +86,11 @@ def create_app(config) -> FastAPI:
                 rotation,
                 dated_log_path(log_dir, "predictions", "jsonl", rotation),
             )
+        # Warm up JIT kernels so the FIRST real request isn't a ~30s spike (Triton
+        # compiles rotary/causal_conv1d/vision kernels inline otherwise). Toggle
+        # with serving.warmup; serving.warmup_runs controls how many dummy passes.
+        if serving.get("warmup", True):
+            await state["engine"].warmup(runs=serving.get("warmup_runs", 1))
         logger.info("Engine started; API ready.")
         yield
         state.clear()

@@ -277,11 +277,28 @@ class VLLMCoinEngine:
             raise FileNotFoundError(f"Image not found: {image}")
         return Image.open(path).convert("RGB")
 
+    async def warmup(self, runs: int = 1) -> None:
+        """Drive the full preprocess -> vLLM prefill/decode path with synthetic
+        images BEFORE serving real traffic, so Triton/torch JIT-compiles its
+        kernels (rotary, causal_conv1d, vision pos-embed, ...) up front. Without
+        this the FIRST real request compiles them inline -> a ~30s latency spike
+        (subsequent requests are ~0.4s). Logs but never raises: a warmup failure
+        must not block startup.
+        """
+        try:
+            # Content is irrelevant; the size just needs to land in the real
+            # post-resize range so the compiled kernel configs match real coins.
+            dummy = Image.new("RGB", (512, 512), (127, 127, 127))
+            for _ in range(max(1, runs)):
+                await self.predict(dummy, dummy)
+            logger.info("Warmup complete (%d run(s)); JIT kernels compiled.", max(1, runs))
+        except Exception as e:  # noqa: BLE001 - warmup is best-effort
+            logger.warning("Warmup failed (serving anyway; first request may be slow): %s", e)
+
     async def predict(self, obverse, reverse) -> dict:
         """Run an obverse+reverse coin pair through vLLM and return the parsed
         result. Reproduces the training/production preprocessing: enhance each
-        image (CLAHE+unsharp), resize_to_fit each, then concatenate them
-        side-by-side into the single image the model was trained on."""
+        image (CLAHE+unsha
         img1 = self._prep_one(obverse)
         img2 = self._prep_one(reverse)
         combined = self._concat(img1, img2)
@@ -306,3 +323,5 @@ class VLLMCoinEngine:
             "raw": response,
             "parse_ok": parsed is not None,
         }
+rp), resize_to_fit each, then concatenate them
+        side-by-side into the single image the model was trained on."""
