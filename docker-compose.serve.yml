@@ -14,8 +14,8 @@ services:
     ports:
       - "49710:49710"
     volumes:
-      # host model dir -> /models/coin-awq (matches Dockerfile CMD override)
-      - /data/coin/coin_vlm_finetune/data/models/Qwen3-VL-8B-coin-awq:/models/coin-awq:ro
+      # host model dir -> /models/coin-merged (matches Dockerfile CMD override)
+      - /data/coin/coin_vlm_finetune/data/models/Qwen3.5-9B-coin-merged:/models/coin-merged:ro
       # persist date-partitioned logs + predictions.jsonl on the host
       - /data/coin/coin_vlm_finetune/outputs/logs/serving:/logs
     deploy:

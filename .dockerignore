@@ -10,6 +10,9 @@ data/
 outputs/
 output/
 *.whl
+# ...except the prebuilt vLLM +cu129 wheel: the Dockerfiles COPY it from the repo
+# root and install it (PyPI's vllm is a CUDA-13 build that fails with libcudart.so.13).
+!vllm-*.whl
 *.gguf
 *.safetensors
 

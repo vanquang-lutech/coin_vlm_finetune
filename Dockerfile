@@ -41,27 +41,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# 1) vLLM 0.23 built for CUDA 12.9, matching the verified native env
-#    (vllm 0.23.0+cu129 / torch 2.11.0+cu129). MUST use the +cu129 RELEASE WHEEL
-#    from GitHub — `pip install vllm` pulls PyPI's CUDA-13 wheel, whose vllm._C
-#    needs libcudart.so.13 (absent here) -> "ImportError: libcudart.so.13".
-#    --torch-backend/extra-index only retarget torch, not vLLM, so they don't fix
-#    it. If github is blocked at build time, pass --build-arg
-#    VLLM_WHEEL_URL=<proxied .whl url> (e.g. https://ghfast.top/https://github.com/...).
-ARG VLLM_VERSION=0.23.0
+# 1) vLLM 0.23 (+cu129) — install the PREBUILT wheel shipped in the build context,
+#    the SAME file the native env uses (vllm-0.23.0+cu129-*-manylinux_2_28_x86_64.whl
+#    at the repo root; .dockerignore re-includes vllm-*.whl). Do NOT `pip install
+#    vllm`: PyPI ships a CUDA-13 wheel whose vllm._C needs libcudart.so.13 (absent
+#    in this cu129 stack) -> "ImportError: libcudart.so.13". torch + the wheel's
+#    other deps resolve from the cu129 torch index.
 ARG VLLM_CUDA=129
-ARG VLLM_WHEEL_URL=
-RUN set -eux; \
-    python -m pip install --upgrade pip uv; \
-    arch="$(uname -m)"; \
-    wheel_url="$VLLM_WHEEL_URL"; \
-    if [ -z "$wheel_url" ]; then \
-        wheel_url="https://github.com/vllm-project/vllm/releases/download/v${VLLM_VERSION}/vllm-${VLLM_VERSION}+cu${VLLM_CUDA}-cp38-abi3-manylinux_2_35_${arch}.whl"; \
-    fi; \
-    uv pip install --system --index-url "$PIP_INDEX_URL" \
-        "$wheel_url" \
+COPY vllm-*.whl /tmp/vllm/
+RUN python -m pip install --upgrade pip uv \
+ && uv pip install --system --index-url "$PIP_INDEX_URL" \
+        /tmp/vllm/vllm-*.whl \
         --extra-index-url "https://download.pytorch.org/whl/cu${VLLM_CUDA}" \
-        --torch-backend="cu${VLLM_CUDA}"
+        --torch-backend="cu${VLLM_CUDA}" \
+ && rm -rf /tmp/vllm
 
 # 2) Serving dependencies.
 COPY requirements-serve.txt .
