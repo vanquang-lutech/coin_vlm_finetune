@@ -4,10 +4,13 @@
 # metrics at {serving.host}:{serving.port}{serving.metrics.path}. By default
 # that is :49710/metrics (see config/serving/serving.yaml).
 #
-# Edit the target below to match the host/port you serve on. When Prometheus
-# runs natively on the SAME box as the API, "localhost:49710" works. When it
-# runs in Docker, use "host.docker.internal:49710" (Docker Desktop) or the
-# host's LAN IP.
+# Target reachability depends on WHERE Prometheus runs:
+#   - Docker (this file's default): "host.docker.internal:49710" — inside the
+#     container "localhost" is the container itself, so we must reach the HOST.
+#     The compose file maps host.docker.internal -> host-gateway (extra_hosts),
+#     which resolves to the host on Linux too, hitting serve's published :49710.
+#   - Native (run_monitoring.sh): the script rewrites this to "localhost:49710"
+#     since the binary runs directly on the serving box.
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
@@ -16,6 +19,6 @@ scrape_configs:
   - job_name: coin-vlm-serving
     metrics_path: /metrics
     static_configs:
-      - targets: ["localhost:49710"]
+      - targets: ["host.docker.internal:49710"]
         labels:
           service: coin-vlm

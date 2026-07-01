@@ -50,15 +50,29 @@ bash deploy/monitoring/run_monitoring.sh status
 bash deploy/monitoring/run_monitoring.sh stop
 ```
 
-- Prometheus → http://localhost:9090
-- Grafana → http://localhost:3000 (admin / admin), dashboard **Coin VLM — Serving** auto-provisioned.
+- Prometheus → http://localhost:49713
+- Grafana → http://localhost:49714 (admin / admin), dashboard **Coin VLM — Serving** auto-provisioned.
 
-Override versions / mirrors via env vars (`PROM_VERSION`, `GRAFANA_VERSION`,
-`PROM_URL`, `GRAFANA_URL`, `GH_PROXY`).
+Ports use the project's dedicated 4971x range (serve 49710 / mlflow 49711 /
+airflow 49712 / prometheus 49713 / grafana 49714) so they don't clash with the
+default 9090/3000 that other projects on the shared box are likely using.
 
-### Docker Compose (fallback / portable)
+Override ports / versions / mirrors via env vars (`PROM_PORT`, `GRAFANA_PORT`,
+`PROM_VERSION`, `GRAFANA_VERSION`, `PROM_URL`, `GRAFANA_URL`, `GH_PROXY`).
 
-On a machine that can reach Docker Hub:
+### Docker Compose
+
+Images are pulled through the DaoCloud mirror (`docker.m.daocloud.io/...`), so
+this works on the firewalled serving box too — same trick as the MLflow stack.
+
+On the serving box (Compose V1):
+
+```bash
+PYTHONNOUSERSITE=1 docker-compose -f deploy/monitoring/docker-compose.monitoring.yml up -d
+```
+
+On a machine with clean Docker Hub access + Compose V2 (the mirror prefix is
+harmless):
 
 ```bash
 docker compose -f deploy/monitoring/docker-compose.monitoring.yml up -d
@@ -66,11 +80,13 @@ docker compose -f deploy/monitoring/docker-compose.monitoring.yml up -d
 
 ## Wiring notes
 
-- **Scrape target** — edit the target in [prometheus.yml](prometheus.yml) to the
-  host:port the API serves on (default `localhost:49710`). For Docker Prometheus
-  scraping a host API, use `host.docker.internal:49710`.
+- **Scrape target** — [prometheus.yml](prometheus.yml) defaults to
+  `host.docker.internal:49710` (Docker: inside the container `localhost` is the
+  container itself, so it must reach the host). The native script rewrites this
+  to `localhost:49710`. If serve runs on a different host/port, edit the target.
 - **Grafana datasource URL** — `http://prometheus:9090` for compose (service
-  name); the native script rewrites it to `http://localhost:9090`.
+  name + the in-container port, which stays 9090); the native script rewrites it
+  to `http://localhost:49713` (the native Prometheus host port).
 
 ## Files
 

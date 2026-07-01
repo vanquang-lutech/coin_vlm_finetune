@@ -39,6 +39,7 @@ PROM_HOME="${RUN_DIR}/prometheus-${PROM_VERSION}.linux-amd64"
 GRAFANA_HOME="${RUN_DIR}/grafana-v${GRAFANA_VERSION}"
 PROM_PID="${RUN_DIR}/prometheus.pid"
 GRAFANA_PID="${RUN_DIR}/grafana.pid"
+PROM_CONFIG="${RUN_DIR}/prometheus.yml"
 
 mkdir -p "${RUN_DIR}"
 
@@ -66,6 +67,12 @@ prepare_provisioning() {
     "${prov}/datasources/prometheus.yml"
   sed -i "s#/etc/grafana/dashboards#${HERE}/grafana/dashboards#g" \
     "${prov}/dashboards/dashboards.yml"
+
+  # The committed prometheus.yml targets host.docker.internal (Docker default).
+  # Natively the API is on the same box, so rewrite the scrape target to
+  # localhost and run off this copy.
+  cp "${HERE}/prometheus.yml" "${PROM_CONFIG}"
+  sed -i "s#host.docker.internal:49710#localhost:49710#g" "${PROM_CONFIG}"
 }
 
 start() {
@@ -74,7 +81,7 @@ start() {
 
   echo ">> Starting Prometheus on :${PROM_PORT} ..."
   nohup "${PROM_HOME}/prometheus" \
-    --config.file="${HERE}/prometheus.yml" \
+    --config.file="${PROM_CONFIG}" \
     --storage.tsdb.path="${RUN_DIR}/prometheus-data" \
     --storage.tsdb.retention.time=15d \
     --web.listen-address=":${PROM_PORT}" \
