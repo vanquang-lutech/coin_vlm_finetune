@@ -16,17 +16,51 @@ lifespan startup and shared across requests.
 import asyncio
 import json
 import time
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 
 from src.serving import metrics as M
 from src.serving.engine import VLLMCoinEngine
-from src.serving.schemas import CoinPrediction, HealthResponse
+from src.serving.schemas import CoinError, CoinPrediction, HealthResponse
 from src.utils import dated_log_path, get_logger
 
 logger = get_logger(__name__)
+
+
+# Fallback code for a bare HTTPException (one we didn't raise as APIError).
+_STATUS_CODES = {
+    400: "bad_request",
+    404: "not_found",
+    405: "method_not_allowed",
+    413: "file_too_large",
+    422: "validation_error",
+    500: "internal_error",
+    503: "engine_unavailable",
+    504: "prediction_timeout",
+}
+
+
+class APIError(HTTPException):
+    """HTTPException that also carries a stable machine-readable `code` for the
+    {code, detail, request_id} error envelope."""
+
+    def __init__(self, status_code: int, code: str, detail: str):
+        super().__init__(status_code=status_code, detail=detail)
+        self.code = code
+
+
+def _error_response(status_code: int, code: str, detail: str, request_id) -> JSONResponse:
+    """Build the uniform error envelope; X-Request-ID header set on every error."""
+    return JSONResponse(
+        status_code=status_code,
+        content={"code": code, "detail": detail, "request_id": request_id},
+        headers={"X-Request-ID": request_id or ""},
+    )
 
 
 class _PredictionLog:
@@ -109,6 +143,50 @@ def create_app(config) -> FastAPI:
         logger.info("Prometheus metrics exposed at %s", metrics_path)
 
     @app.middleware("http")
+    async def request_context(request: Request, call_next):
+        # One id per request: echoed as X-Request-ID and tagged into every log
+        # line + error body, so a client can quote it and we grep the server log.
+        request_id = str(uuid.uuid4())
+        request.state.request_id = request_id
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        return response
+
+    @app.exception_handler(APIError)
+    async def _handle_api_error(request: Request, exc: APIError):
+        return _error_response(
+            exc.status_code, exc.code, exc.detail,
+            getattr(request.state, "request_id", None),
+        )
+
+    @app.exception_handler(HTTPException)
+    async def _handle_http_exception(request: Request, exc: HTTPException):
+        # Bare HTTPException we didn't raise as APIError (e.g. 404/405): map to a
+        # code from the status. 4xx detail is safe to surface; 5xx stays generic.
+        code = _STATUS_CODES.get(exc.status_code, "error")
+        detail = str(exc.detail) if exc.status_code < 500 else "Internal server error"
+        return _error_response(exc.status_code, code, detail,
+                               getattr(request.state, "request_id", None))
+
+    @app.exception_handler(RequestValidationError)
+    async def _handle_validation(request: Request, exc: RequestValidationError):
+        # Missing/invalid multipart fields -> same envelope as everything else.
+        detail = "; ".join(
+            f"{'.'.join(str(p) for p in e.get('loc', []))}: {e.get('msg', '')}"
+            for e in exc.errors()
+        ) or "Validation error"
+        return _error_response(422, "validation_error", detail,
+                               getattr(request.state, "request_id", None))
+
+    @app.exception_handler(Exception)
+    async def _handle_unhandled(request: Request, exc: Exception):
+        # Anything uncaught (incl. errors after predict): generic 500 to client,
+        # full traceback to the log under the same request_id.
+        request_id = getattr(request.state, "request_id", None)
+        logger.exception("[req=%s] Unhandled server error", request_id)
+        return _error_response(500, "internal_error", "Internal server error", request_id)
+
+    @app.middleware("http")
     async def add_process_time_header(request, call_next):
         # Total SERVER-side handling time incl. reading the (uploaded) body.
         # Compare against the client's TTFB: if X-Process-Time-Ms is small but
@@ -132,42 +210,52 @@ def create_app(config) -> FastAPI:
     async def _read_image(file: UploadFile, label: str) -> bytes:
         """Validate content-type + size and return the bytes of one upload."""
         if not (file.content_type or "").startswith("image/"):
-            raise HTTPException(
-                status_code=400,
-                detail=f"'{label}' must be an image; got content-type={file.content_type}",
+            raise APIError(
+                400, "not_an_image",
+                f"'{label}' must be an image; got content-type={file.content_type}",
             )
         if max_upload_bytes and file.size and file.size > max_upload_bytes:
-            raise HTTPException(
-                status_code=413,
-                detail=f"'{label}' too large ({file.size} bytes); limit is {max_upload_bytes} bytes.",
+            raise APIError(
+                413, "file_too_large",
+                f"'{label}' too large ({file.size} bytes); limit is {max_upload_bytes} bytes.",
             )
         data = await file.read()
         if not data:
-            raise HTTPException(status_code=400, detail=f"'{label}' is empty.")
+            raise APIError(400, "empty_file", f"'{label}' is empty.")
         if max_upload_bytes and len(data) > max_upload_bytes:
-            raise HTTPException(
-                status_code=413,
-                detail=f"'{label}' too large ({len(data)} bytes); limit is {max_upload_bytes} bytes.",
+            raise APIError(
+                413, "file_too_large",
+                f"'{label}' too large ({len(data)} bytes); limit is {max_upload_bytes} bytes.",
             )
         return data
 
-    @app.post("/predict", response_model=CoinPrediction)
+    @app.post(
+        "/predict",
+        response_model=CoinPrediction,
+        responses={
+            400: {"model": CoinError}, 413: {"model": CoinError},
+            422: {"model": CoinError}, 503: {"model": CoinError},
+            504: {"model": CoinError}, 500: {"model": CoinError},
+        },
+    )
     async def predict(
+        request: Request,
         obverse: UploadFile = File(..., description="Obverse (front) coin image."),
         reverse: UploadFile = File(..., description="Reverse (back) coin image."),
     ):
         req_start = time.perf_counter()
+        request_id = getattr(request.state, "request_id", None)
         M.INFLIGHT.inc()
         try:
             engine: VLLMCoinEngine = state.get("engine")
             if engine is None:
                 M.REQUESTS_TOTAL.labels(status="unavailable").inc()
-                raise HTTPException(status_code=503, detail="Engine not ready.")
+                raise APIError(503, "engine_unavailable", "Engine not ready.")
 
             try:
                 obv = await _read_image(obverse, "obverse")
                 rev = await _read_image(reverse, "reverse")
-            except HTTPException:
+            except APIError:
                 M.REQUESTS_TOTAL.labels(status="bad_request").inc()
                 raise
             M.UPLOAD_MB.observe(len(obv) / 1024 / 1024)
@@ -184,17 +272,19 @@ def create_app(config) -> FastAPI:
                     result = await engine.predict(obv, rev)
             except asyncio.TimeoutError:
                 M.REQUESTS_TOTAL.labels(status="timeout").inc()
-                logger.warning("Prediction timed out (%ss) for %s", request_timeout_s, names)
-                pred_log.write({"files": names, "error": f"timeout>{request_timeout_s}s"})
-                raise HTTPException(
-                    status_code=504,
-                    detail=f"Prediction timed out after {request_timeout_s}s.",
+                logger.warning("[req=%s] Prediction timed out (%ss) for %s",
+                               request_id, request_timeout_s, names)
+                pred_log.write({"files": names, "error": f"timeout>{request_timeout_s}s",
+                                "request_id": request_id})
+                raise APIError(
+                    504, "prediction_timeout",
+                    f"Prediction timed out after {request_timeout_s}s.",
                 )
-            except Exception as exc:  # noqa: BLE001 - surface as a clean 500
+            except Exception as exc:  # noqa: BLE001 - real cause logged, client gets generic 500
                 M.REQUESTS_TOTAL.labels(status="error").inc()
-                logger.exception("Prediction failed for %s", names)
-                pred_log.write({"files": names, "error": str(exc)})
-                raise HTTPException(status_code=500, detail=str(exc)) from exc
+                logger.exception("[req=%s] Prediction failed for %s", request_id, names)
+                pred_log.write({"files": names, "error": str(exc), "request_id": request_id})
+                raise APIError(500, "prediction_failed", "Internal server error") from exc
 
             M.PREDICT_LATENCY.observe(time.perf_counter() - start)
             M.REQUESTS_TOTAL.labels(status="ok").inc()
@@ -202,11 +292,12 @@ def create_app(config) -> FastAPI:
 
             latency_ms = round((time.perf_counter() - start) * 1000, 1)
             logger.info(
-                "predict files=%s year=%s mint_mark=%s parse_ok=%s latency_ms=%s",
-                names, result.get("year"), result.get("mint_mark"),
+                "[req=%s] predict files=%s year=%s mint_mark=%s parse_ok=%s latency_ms=%s",
+                request_id, names, result.get("year"), result.get("mint_mark"),
                 result.get("parse_ok"), latency_ms,
             )
             pred_log.write({
+                "request_id": request_id,
                 "obverse": obverse.filename,
                 "reverse": reverse.filename,
                 "year": result.get("year"),

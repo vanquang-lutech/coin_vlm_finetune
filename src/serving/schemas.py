@@ -52,3 +52,13 @@ class HealthResponse(BaseModel):
     status: str
     model_path: str
     quantization: str | None
+
+
+class CoinError(BaseModel):
+    """Uniform error envelope for every 4xx/5xx response. `code` is a stable,
+    machine-readable string clients branch on (independent of `detail` wording);
+    `detail` is human-readable (generic for 5xx — the real cause is server-side
+    log only); `request_id` ties the response to the server log line."""
+    code: str = Field(..., description="Stable machine-readable error code.")
+    detail: str = Field(..., description="Human-readable message.")
+    request_id: str | None = Field(None, description="Correlates with server logs.")

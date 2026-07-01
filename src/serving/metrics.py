@@ -102,7 +102,9 @@ PREDICTION_NULL_TOTAL = _counter(
 def record_prediction(result: dict) -> None:
     """Update the output-drift counters from one parsed prediction result.
     `result` is the dict VLLMCoinEngine.predict returns
-    ({year, mint_mark, parse_ok, raw})."""
+    ({year, mint_mark, parse_ok, raw}). Tolerate None (a parse failure that
+    yielded no dict) so metrics recording never turns a bad parse into a 500."""
+    result = result or {}
     PARSE_TOTAL.labels(result="ok" if result.get("parse_ok") else "fail").inc()
     if result.get("year") is None:
         PREDICTION_NULL_TOTAL.labels(field="year").inc()
