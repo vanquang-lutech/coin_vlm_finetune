@@ -16,13 +16,19 @@
 #   bash deploy/monitoring/run_monitoring.sh stop
 #   bash deploy/monitoring/run_monitoring.sh status
 #
-# Then: Prometheus http://localhost:9090 , Grafana http://localhost:3000
+# Then: Prometheus http://localhost:49713 , Grafana http://localhost:49714
 #       (admin/admin; the "Coin VLM — Serving" dashboard is auto-provisioned).
+#       Override with PROM_PORT / GRAFANA_PORT env vars.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUN_DIR="${HERE}/.run"
 GH_PROXY="${GH_PROXY:-https://ghfast.top/}"
+
+# Host ports in the project's dedicated 4971x range — 9090/3000 are too common
+# and clash with other projects on the shared box.
+PROM_PORT="${PROM_PORT:-49713}"
+GRAFANA_PORT="${GRAFANA_PORT:-49714}"
 
 PROM_VERSION="${PROM_VERSION:-2.53.0}"
 GRAFANA_VERSION="${GRAFANA_VERSION:-11.1.0}"
@@ -56,7 +62,7 @@ prepare_provisioning() {
   local prov="${RUN_DIR}/provisioning"
   rm -rf "${prov}"
   cp -r "${HERE}/grafana/provisioning" "${prov}"
-  sed -i "s#http://prometheus:9090#http://localhost:9090#g" \
+  sed -i "s#http://prometheus:9090#http://localhost:${PROM_PORT}#g" \
     "${prov}/datasources/prometheus.yml"
   sed -i "s#/etc/grafana/dashboards#${HERE}/grafana/dashboards#g" \
     "${prov}/dashboards/dashboards.yml"
@@ -66,18 +72,20 @@ start() {
   download
   prepare_provisioning
 
-  echo ">> Starting Prometheus on :9090 ..."
+  echo ">> Starting Prometheus on :${PROM_PORT} ..."
   nohup "${PROM_HOME}/prometheus" \
     --config.file="${HERE}/prometheus.yml" \
     --storage.tsdb.path="${RUN_DIR}/prometheus-data" \
     --storage.tsdb.retention.time=15d \
+    --web.listen-address=":${PROM_PORT}" \
     >"${RUN_DIR}/prometheus.log" 2>&1 &
   echo $! > "${PROM_PID}"
 
-  echo ">> Starting Grafana on :3000 ..."
+  echo ">> Starting Grafana on :${GRAFANA_PORT} ..."
   GF_PATHS_PROVISIONING="${RUN_DIR}/provisioning" \
   GF_PATHS_DATA="${RUN_DIR}/grafana-data" \
   GF_PATHS_LOGS="${RUN_DIR}/grafana-logs" \
+  GF_SERVER_HTTP_PORT="${GRAFANA_PORT}" \
   GF_SECURITY_ADMIN_USER=admin \
   GF_SECURITY_ADMIN_PASSWORD=admin \
   GF_USERS_ALLOW_SIGN_UP=false \
@@ -86,7 +94,7 @@ start() {
     >"${RUN_DIR}/grafana.log" 2>&1 &
   echo $! > "${GRAFANA_PID}"
 
-  echo ">> Up. Prometheus http://localhost:9090  |  Grafana http://localhost:3000 (admin/admin)"
+  echo ">> Up. Prometheus http://localhost:${PROM_PORT}  |  Grafana http://localhost:${GRAFANA_PORT} (admin/admin)"
   echo "   Logs: ${RUN_DIR}/{prometheus,grafana}.log"
 }
 

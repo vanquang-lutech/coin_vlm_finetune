@@ -1,23 +1,32 @@
-# Docker-compose monitoring stack (FALLBACK / portable option).
+# Docker-compose monitoring stack.
 #
-# NOTE: on the project's serving box the firewall blocks Docker Hub and the
-# installed Compose V1 is broken (see the MLflow setup), so the NATIVE path
-# (run_monitoring.sh) is the primary deployment. Use this compose file on a
-# machine that can pull images.
+# Runs on the project's serving box too: images are pulled through the DaoCloud
+# mirror (docker.m.daocloud.io/...) to dodge the Docker-Hub firewall block, the
+# same trick the MLflow stack uses. On that box drive it with Compose V1:
 #
-#   docker compose -f deploy/monitoring/docker-compose.monitoring.yml up -d
+#   PYTHONNOUSERSITE=1 docker-compose -f deploy/monitoring/docker-compose.monitoring.yml up -d
+#
+# (PYTHONNOUSERSITE=1 dodges the V1-1.29.2 "http+docker" bug from the shared
+# ~/.local requests>=2.32.) On a machine with clean Docker Hub access + Compose
+# V2, the mirror prefix is harmless and `docker compose ... up -d` works as-is.
+#
+# version "2.4" is required so Compose V1 (1.29.2) parses the file (same reason
+# as docker-compose.mlflow.yml); Compose V2 ignores it (harmless warning).
 #
 # Prometheus scrapes the serving API on the HOST. From inside the Prometheus
 # container, "localhost" is the container itself, so prometheus.yml must target
 # the host. On Docker Desktop that is host.docker.internal (mapped below); on
 # Linux pass the host's LAN IP or run with network_mode: host.
+version: "2.4"
 services:
   prometheus:
-    image: prom/prometheus:v2.53.0
+    image: docker.m.daocloud.io/prom/prometheus:v2.53.0
     container_name: coin-prometheus
     restart: unless-stopped
     ports:
-      - "9090:9090"
+      # host 49713 -> container 9090 (dedicated 4971x range to avoid clashing
+      # with other projects on the shared box; 9090 is too common)
+      - "49713:9090"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -29,13 +38,14 @@ services:
       - "--storage.tsdb.retention.time=15d"
 
   grafana:
-    image: grafana/grafana:11.1.0
+    image: docker.m.daocloud.io/grafana/grafana:11.1.0
     container_name: coin-grafana
     restart: unless-stopped
     depends_on:
       - prometheus
     ports:
-      - "3000:3000"
+      # host 49714 -> container 3000 (dedicated 4971x range; 3000 is too common)
+      - "49714:3000"
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
