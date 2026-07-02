@@ -14,12 +14,14 @@ lifespan startup and shared across requests.
 """
 
 import asyncio
+import io
 import json
 import time
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
+from PIL import Image
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -52,6 +54,22 @@ class APIError(HTTPException):
     def __init__(self, status_code: int, code: str, detail: str):
         super().__init__(status_code=status_code, detail=detail)
         self.code = code
+
+
+def _decode_image(data: bytes, label: str) -> Image.Image:
+    """Decode upload bytes to an RGB PIL image once, here in the app layer:
+    a corrupt/truncated file becomes a 400 (instead of a 500 from inside the
+    engine), and the decoded image feeds both the input-drift metrics and the
+    engine without a second decode. PIL's decompression-bomb guard also fires
+    here, protecting the CLAHE step from absurd pixel counts."""
+    try:
+        img = Image.open(io.BytesIO(data))
+        img.load()
+        return img.convert("RGB")
+    except Exception as exc:  # noqa: BLE001 - PIL raises many concrete types
+        raise APIError(
+            400, "invalid_image", f"'{label}' could not be decoded as an image."
+        ) from exc
 
 
 def _error_response(status_code: int, code: str, detail: str, request_id) -> JSONResponse:
@@ -255,21 +273,25 @@ def create_app(config) -> FastAPI:
             try:
                 obv = await _read_image(obverse, "obverse")
                 rev = await _read_image(reverse, "reverse")
+                obv_img = _decode_image(obv, "obverse")
+                rev_img = _decode_image(rev, "reverse")
             except APIError:
                 M.REQUESTS_TOTAL.labels(status="bad_request").inc()
                 raise
             M.UPLOAD_MB.observe(len(obv) / 1024 / 1024)
             M.UPLOAD_MB.observe(len(rev) / 1024 / 1024)
+            M.observe_image(obv_img)
+            M.observe_image(rev_img)
             names = f"{obverse.filename}|{reverse.filename}"
 
             start = time.perf_counter()
             try:
                 if request_timeout_s:
                     result = await asyncio.wait_for(
-                        engine.predict(obv, rev), timeout=request_timeout_s
+                        engine.predict(obv_img, rev_img), timeout=request_timeout_s
                     )
                 else:
-                    result = await engine.predict(obv, rev)
+                    result = await engine.predict(obv_img, rev_img)
             except asyncio.TimeoutError:
                 M.REQUESTS_TOTAL.labels(status="timeout").inc()
                 logger.warning("[req=%s] Prediction timed out (%ss) for %s",

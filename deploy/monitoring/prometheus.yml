@@ -15,6 +15,12 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
+# Resolved relative to this file's directory: /etc/prometheus/ in Docker (the
+# compose file mounts alerts.yml next to this config), the .run/ copy natively
+# (run_monitoring.sh copies alerts.yml alongside its config copy).
+rule_files:
+  - alerts.yml
+
 scrape_configs:
   - job_name: coin-vlm-serving
     metrics_path: /metrics
@@ -22,3 +28,13 @@ scrape_configs:
       - targets: ["host.docker.internal:49710"]
         labels:
           service: coin-vlm
+
+  # NVIDIA DCGM exporter (GPU util / VRAM / temp / power). Always runs as a
+  # Docker container (there is no native binary) publishing host port 49715,
+  # so both Docker and native Prometheus reach it through the host.
+  - job_name: dcgm
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["host.docker.internal:49715"]
+        labels:
+          service: gpu

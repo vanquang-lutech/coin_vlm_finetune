@@ -31,6 +31,7 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus-data:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
@@ -54,6 +55,26 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/etc/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
+
+  # GPU metrics (util / VRAM / temp / power) for the dashboard's GPU row.
+  # Hosted on nvcr.io -> pulled through DaoCloud's nvcr mirror (same firewall
+  # dodge as the other images). Needs nvidia-container-toolkit on the host,
+  # which the serve container already requires. `runtime: nvidia` is why this
+  # file pins compose format 2.4 (supported since 2.3, works on Compose V1).
+  # When running Prometheus natively instead, start JUST this service:
+  #   docker-compose -f docker-compose.monitoring.yml up -d dcgm-exporter
+  dcgm-exporter:
+    image: nvcr.m.daocloud.io/nvidia/k8s/dcgm-exporter:3.3.9-3.6.1-ubuntu22.04
+    container_name: coin-dcgm-exporter
+    restart: unless-stopped
+    runtime: nvidia
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+    cap_add:
+      - SYS_ADMIN            # DCGM needs it for GPU profiling counters
+    ports:
+      # host 49715 -> container 9400 (project's dedicated 4971x range)
+      - "49715:9400"
 
 volumes:
   prometheus-data:

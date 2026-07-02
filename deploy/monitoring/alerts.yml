@@ -1,0 +1,85 @@
+# Prometheus alert rules for the coin VLM serving API.
+#
+# No Alertmanager is deployed (the serving box has no outbound notification
+# channel), so firing alerts surface in the Prometheus UI (:49713/alerts) and
+# in Grafana via the built-in `ALERTS{alertstate="firing"}` series. Wire an
+# Alertmanager later by adding an `alerting:` block to prometheus.yml.
+#
+# Thresholds are starting points — tune once real traffic establishes a
+# baseline. All ratio rules divide by a clamp_min()'d denominator, so a
+# zero-traffic period evaluates to 0 (or NaN for quantiles) and does NOT fire.
+groups:
+  - name: coin-vlm-serving
+    rules:
+      - alert: CoinServingDown
+        expr: up{job="coin-vlm-serving"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Serving API is unreachable"
+          description: "Prometheus has failed to scrape :49710/metrics for 2 minutes — the API is down or the port/firewall changed."
+
+      - alert: CoinHighErrorRatio
+        expr: >
+          sum(rate(coin_requests_total{status!="ok"}[5m]))
+            / clamp_min(sum(rate(coin_requests_total[5m])), 1e-9) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "> 5% of /predict requests failing"
+          description: "Non-ok outcomes (bad_request/timeout/error/unavailable) exceed 5% of traffic over 5 minutes. Break down by status on the dashboard."
+
+      - alert: CoinParseFailureRatioHigh
+        expr: >
+          sum(rate(coin_parse_total{result="fail"}[15m]))
+            / clamp_min(sum(rate(coin_parse_total[15m])), 1e-9) > 0.10
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "> 10% of model outputs fail to parse"
+          description: "Output-drift signal: the model is no longer producing the trained JSON schema (prompt/schema regression or input shift)."
+
+      - alert: CoinYearNullRateHigh
+        expr: >
+          sum(rate(coin_prediction_null_total{field="year"}[15m]))
+            / clamp_min(sum(rate(coin_parse_total[15m])), 1e-9) > 0.20
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "> 20% of predictions have year=null"
+          description: "Output-drift signal: year should almost always be extractable; a null spike usually means unreadable inputs. (No mint-mark rule — null mint marks are legitimate for old Philadelphia coins.)"
+
+      - alert: CoinLatencyP95High
+        expr: >
+          histogram_quantile(0.95,
+            sum(rate(coin_request_latency_seconds_bucket[10m])) by (le)) > 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p95 end-to-end latency above 10s"
+          description: "Server-side /predict p95 has been above 10s for 10 minutes — check vLLM queue depth / KV-cache and GPU panels."
+
+      - alert: CoinInputResolutionLow
+        expr: >
+          histogram_quantile(0.5,
+            sum(rate(coin_image_pixels_bucket[30m])) by (le)) < 40000
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Median upload resolution below ~200x200 px"
+          description: "Input-drift signal: accuracy is resolution-capped (source data is ~250px). Clients sending smaller images will silently degrade extract accuracy."
+
+      - alert: VllmQueueBacklog
+        expr: vllm:num_requests_waiting > 4
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "vLLM has a sustained request queue"
+          description: "Requests have been waiting (not running) for 10 minutes — throughput is saturated; consider raising max_num_seqs or adding capacity."
