@@ -13,6 +13,13 @@
 # version "2.4" is required so Compose V1 (1.29.2) parses the file (same reason
 # as docker-compose.mlflow.yml); Compose V2 ignores it (harmless warning).
 #
+# Compose V1 + new Docker Engine (>=25) bug: RECREATING an existing container
+# (e.g. after editing this file or a mounted config) crashes with
+# `KeyError: 'ContainerConfig'` — V1 reads an image field the engine removed.
+# Workaround: remove the container first so compose CREATES instead:
+#   docker rm -f <coin-prometheus|coin-grafana|...>  &&  ... up -d
+# Data is safe: prometheus/grafana state lives in the named volumes below.
+#
 # Prometheus scrapes the serving API on the HOST. From inside the Prometheus
 # container, "localhost" is the container itself, so prometheus.yml must target
 # the host. On Docker Desktop that is host.docker.internal (mapped below); on

@@ -153,22 +153,86 @@
       "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } },
       "targets": [
         {
-          "expr": "sum by (field) (rate(coin_prediction_null_total[5m])) / clamp_min(sum(rate(coin_parse_total[5m])), 1e-9)",
+          "expr": "sum by (field) (rate(coin_prediction_null_total[5m])) / on() group_left() clamp_min(sum(rate(coin_parse_total[5m])), 1e-9)",
           "legendFormat": "{{field}}",
           "refId": "A"
         }
       ]
     },
     {
+      "type": "timeseries",
+      "title": "Predicted mint-mark mix (share of predictions, 15m)",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
+      "fieldConfig": { "defaults": { "custom": { "stacking": { "mode": "percent" }, "fillOpacity": 40 } } },
+      "targets": [
+        {
+          "expr": "sum by (mint_mark) (rate(coin_prediction_mint_total[15m]))",
+          "legendFormat": "{{mint_mark}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Predicted decade mix (share of predictions, 15m)",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
+      "fieldConfig": { "defaults": { "custom": { "stacking": { "mode": "percent" }, "fillOpacity": 40 } } },
+      "targets": [
+        {
+          "expr": "sum by (decade) (rate(coin_prediction_decade_total[15m])) != 0",
+          "legendFormat": "{{decade}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Input drift (upload quality)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 40 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Upload resolution (pixels/image, 15m)",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 41 },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(coin_image_pixels_bucket[15m])) by (le))", "legendFormat": "p50", "refId": "A" },
+        { "expr": "histogram_quantile(0.10, sum(rate(coin_image_pixels_bucket[15m])) by (le))", "legendFormat": "p10", "refId": "B" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Upload contrast p50 (enhance threshold 50)",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 41 },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(coin_image_contrast_bucket[15m])) by (le))", "legendFormat": "p50", "refId": "A" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Upload sharpness p50 (blur threshold 600)",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 41 },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(coin_image_sharpness_bucket[15m])) by (le))", "legendFormat": "p50", "refId": "A" }
+      ]
+    },
+    {
       "type": "row",
       "title": "vLLM engine",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 }
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 49 }
     },
     {
       "type": "timeseries",
       "title": "GPU KV-cache usage",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 33 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 50 },
       "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } },
       "targets": [
         { "expr": "vllm:kv_cache_usage_perc", "legendFormat": "kv-cache", "refId": "A" }
@@ -178,11 +242,56 @@
       "type": "timeseries",
       "title": "Requests running vs waiting",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 33 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 50 },
       "fieldConfig": { "defaults": { "unit": "short" } },
       "targets": [
         { "expr": "vllm:num_requests_running", "legendFormat": "running", "refId": "A" },
         { "expr": "vllm:num_requests_waiting", "legendFormat": "waiting", "refId": "B" }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "GPU (DCGM)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 58 }
+    },
+    {
+      "type": "timeseries",
+      "title": "GPU utilization",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 59 },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 } },
+      "targets": [
+        { "expr": "DCGM_FI_DEV_GPU_UTIL", "legendFormat": "gpu {{gpu}}", "refId": "A" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "VRAM used",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 6, "x": 6, "y": 59 },
+      "fieldConfig": { "defaults": { "unit": "mbytes" } },
+      "targets": [
+        { "expr": "DCGM_FI_DEV_FB_USED", "legendFormat": "gpu {{gpu}}", "refId": "A" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "GPU temperature",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 59 },
+      "fieldConfig": { "defaults": { "unit": "celsius" } },
+      "targets": [
+        { "expr": "DCGM_FI_DEV_GPU_TEMP", "legendFormat": "gpu {{gpu}}", "refId": "A" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Power draw",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 59 },
+      "fieldConfig": { "defaults": { "unit": "watt" } },
+      "targets": [
+        { "expr": "DCGM_FI_DEV_POWER_USAGE", "legendFormat": "gpu {{gpu}}", "refId": "A" }
       ]
     }
   ]

@@ -69,10 +69,15 @@ prepare_provisioning() {
     "${prov}/dashboards/dashboards.yml"
 
   # The committed prometheus.yml targets host.docker.internal (Docker default).
-  # Natively the API is on the same box, so rewrite the scrape target to
-  # localhost and run off this copy.
+  # Natively everything is on the same box, so rewrite ALL scrape targets to
+  # localhost and run off this copy. alerts.yml comes along because rule_files
+  # paths resolve relative to the config file's directory.
   cp "${HERE}/prometheus.yml" "${PROM_CONFIG}"
-  sed -i "s#host.docker.internal:49710#localhost:49710#g" "${PROM_CONFIG}"
+  cp "${HERE}/alerts.yml" "${RUN_DIR}/alerts.yml"
+  sed -i "s#host.docker.internal:#localhost:#g" "${PROM_CONFIG}"
+  # GPU metrics have no native binary: the dcgm target stays DOWN unless the
+  # dcgm-exporter container is started separately (mirror-pulled, so it works
+  # on this box):  docker-compose -f docker-compose.monitoring.yml up -d dcgm-exporter
 }
 
 start() {
